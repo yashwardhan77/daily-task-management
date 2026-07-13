@@ -414,7 +414,7 @@ export async function addEmployeeAction(
     .insert({
       id: id.toUpperCase(),
       name,
-      password: passwordHash, // plain text for simple authentication
+      password: passwordHash,
       role
     })
 
@@ -424,4 +424,82 @@ export async function addEmployeeAction(
   }
 
   return { success: true, message: 'Employee added successfully!' }
+}
+
+/**
+ * Admin Action to fetch all employees
+ */
+export async function getEmployeesAction(): Promise<{
+  success: boolean
+  employees: { id: string; name: string; role: string; password: string }[]
+}> {
+  const isAdmin = await getAdminSession()
+  if (!isAdmin) return { success: false, employees: [] }
+
+  const { data, error } = await supabase
+    .from('employees')
+    .select('id, name, role, password')
+    .order('id', { ascending: true })
+
+  if (error || !data) {
+    console.error('Error fetching employees:', error)
+    return { success: false, employees: [] }
+  }
+
+  return { success: true, employees: data }
+}
+
+/**
+ * Admin Action to edit an existing employee
+ */
+export async function editEmployeeAction(
+  id: string,
+  name: string,
+  passwordHash: string,
+  role: string
+): Promise<{ success: boolean; message: string }> {
+  const isAdmin = await getAdminSession()
+  if (!isAdmin) {
+    return { success: false, message: 'Unauthorized access.' }
+  }
+
+  if (!id || !name || !passwordHash || !role) {
+    return { success: false, message: 'All fields are required.' }
+  }
+
+  const { error } = await supabase
+    .from('employees')
+    .update({ name, password: passwordHash, role })
+    .eq('id', id.toUpperCase())
+
+  if (error) {
+    console.error('Error editing employee:', error)
+    return { success: false, message: 'Failed to update employee.' }
+  }
+
+  return { success: true, message: `Employee ${id} updated successfully!` }
+}
+
+/**
+ * Admin Action to delete an employee
+ */
+export async function deleteEmployeeAction(
+  id: string
+): Promise<{ success: boolean; message: string }> {
+  const isAdmin = await getAdminSession()
+  if (!isAdmin) {
+    return { success: false, message: 'Unauthorized access.' }
+  }
+
+  const { error } = await supabase
+    .from('employees')
+    .delete()
+    .eq('id', id.toUpperCase())
+
+  if (error) {
+    console.error('Error deleting employee:', error)
+    return { success: false, message: 'Failed to delete employee.' }
+  }
+
+  return { success: true, message: `Employee ${id} deleted successfully!` }
 }
