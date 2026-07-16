@@ -9,7 +9,7 @@ import {
   Clock, ClipboardList, LogOut, CheckCircle, AlertCircle,
   Check, LayoutDashboard, ChevronLeft, ChevronRight, Menu,
   CalendarDays, Plus, X, ListChecks, Sun, Sunset,
-  MapPin, MapPinOff, Navigation, RefreshCw, ShieldCheck
+  MapPin, MapPinOff, Navigation, RefreshCw, ShieldCheck, LocateFixed
 } from 'lucide-react'
 
 interface EmployeeDashboardClientProps {
@@ -135,15 +135,16 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
   const [timeWarning, setTimeWarning] = useState<string | null>(null)
 
   // ── Geo-restriction state ───────────────────────────────────────────────────
-  type GeoStatus = 'idle' | 'checking' | 'verified' | 'out_of_range' | 'denied' | 'unavailable' | 'not_configured'
+  type GeoStatus = 'loading' | 'idle' | 'requesting' | 'checking' | 'verified' | 'out_of_range' | 'denied' | 'unavailable' | 'not_configured'
   const [geoEnabled, setGeoEnabled] = useState(false)
-  const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle')
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>('loading')
   const [distanceM, setDistanceM] = useState<number | null>(null)
   const [geoRadius, setGeoRadius] = useState(50)
-  const [geoRechecking, setGeoRechecking] = useState(false)
   const geoSettingsRef = React.useRef<{ lat: number; lng: number; radiusMeters: number } | null>(null)
 
-  const runLocationCheck = React.useCallback((settings: { lat: number; lng: number; radiusMeters: number }) => {
+  const runLocationCheck = React.useCallback(() => {
+    if (!geoSettingsRef.current) return
+    const settings = geoSettingsRef.current
     if (!navigator.geolocation) {
       setGeoStatus('unavailable')
       return
@@ -154,12 +155,8 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
         const dist = getDistanceMeters(pos.coords.latitude, pos.coords.longitude, settings.lat, settings.lng)
         setDistanceM(Math.round(dist))
         setGeoStatus(dist <= settings.radiusMeters ? 'verified' : 'out_of_range')
-        setGeoRechecking(false)
       },
-      () => {
-        setGeoStatus('denied')
-        setGeoRechecking(false)
-      },
+      () => setGeoStatus('denied'),
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     )
   }, [])
@@ -168,22 +165,21 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
     getGeoSettingsAction().then(settings => {
       setGeoEnabled(settings.enabled)
       setGeoRadius(settings.radiusMeters)
-      if (settings.enabled) {
-        if (settings.lat === 0 && settings.lng === 0) {
-          setGeoStatus('not_configured')
-        } else {
-          geoSettingsRef.current = { lat: settings.lat, lng: settings.lng, radiusMeters: settings.radiusMeters }
-          runLocationCheck({ lat: settings.lat, lng: settings.lng, radiusMeters: settings.radiusMeters })
-        }
+      if (!settings.enabled) {
+        setGeoStatus('idle') // restriction off, no check needed
+      } else if (settings.lat === 0 && settings.lng === 0) {
+        setGeoStatus('not_configured')
+      } else {
+        geoSettingsRef.current = { lat: settings.lat, lng: settings.lng, radiusMeters: settings.radiusMeters }
+        setGeoStatus('requesting') // show overlay asking user to allow location
       }
-    })
+    }).catch(() => setGeoStatus('idle'))
   }, [runLocationCheck])
 
   const handleRecheck = () => {
     if (!geoSettingsRef.current) return
-    setGeoRechecking(true)
     setDistanceM(null)
-    runLocationCheck(geoSettingsRef.current)
+    runLocationCheck()
   }
 
   // Effective submit permission: time check AND location check
@@ -252,6 +248,95 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
 
   return (
     <div className="h-screen overflow-hidden bg-slate-100 flex">
+
+      {/* ── Location Gate Overlay ── shown when geo is enabled and not yet verified ── */}
+      {geoEnabled && geoStatus !== 'idle' && geoStatus !== 'verified' && (
+        <div className="fixed inset-0 z-[100] bg-[#0c1a2e]/95 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center gap-5 text-center">
+
+            {/* Icon */}
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
+              geoStatus === 'loading' || geoStatus === 'requesting' ? 'bg-sky-100'
+              : geoStatus === 'checking' ? 'bg-sky-100'
+              : geoStatus === 'verified' ? 'bg-emerald-100'
+              : geoStatus === 'out_of_range' ? 'bg-red-100'
+              : geoStatus === 'denied' ? 'bg-amber-100'
+              : 'bg-slate-100'
+            }`}>
+              {(geoStatus === 'loading' || geoStatus === 'requesting') && <MapPin className="w-9 h-9 text-sky-600" />}
+              {geoStatus === 'checking' && <LocateFixed className="w-9 h-9 text-sky-600 animate-spin" />}
+              {geoStatus === 'out_of_range' && <MapPinOff className="w-9 h-9 text-red-500" />}
+              {geoStatus === 'denied' && <MapPinOff className="w-9 h-9 text-amber-500" />}
+              {geoStatus === 'unavailable' && <AlertCircle className="w-9 h-9 text-amber-500" />}
+              {geoStatus === 'not_configured' && <MapPin className="w-9 h-9 text-slate-400" />}
+            </div>
+
+            {/* Title */}
+            <div className="flex flex-col gap-1">
+              {(geoStatus === 'loading') && <h3 className="text-lg font-black text-slate-800">Loading...</h3>}
+              {geoStatus === 'requesting' && <h3 className="text-lg font-black text-slate-800">📍 Location Required</h3>}
+              {geoStatus === 'checking' && <h3 className="text-lg font-black text-slate-800">Verifying Location...</h3>}
+              {geoStatus === 'out_of_range' && <h3 className="text-lg font-black text-red-700">❌ Outside Office Range</h3>}
+              {geoStatus === 'denied' && <h3 className="text-lg font-black text-amber-700">⚠️ Location Access Denied</h3>}
+              {geoStatus === 'unavailable' && <h3 className="text-lg font-black text-amber-700">⚠️ Not Supported</h3>}
+              {geoStatus === 'not_configured' && <h3 className="text-lg font-black text-slate-700">Office Not Configured</h3>}
+            </div>
+
+            {/* Description */}
+            <p className="text-sm text-slate-600 leading-relaxed">
+              {geoStatus === 'loading' && 'Please wait...'}
+              {geoStatus === 'requesting' &&
+                `Admin has enabled office-location restriction. You must be physically present at the office (within ${geoRadius}m) to submit your daily log.`}
+              {geoStatus === 'checking' && 'Checking your GPS location. Please wait...'}
+              {geoStatus === 'out_of_range' &&
+                `You are ${distanceM !== null ? distanceM + 'm' : 'too far'} away from the office. The allowed range is ${geoRadius}m. Please go to the office and try again.`}
+              {geoStatus === 'denied' &&
+                'You blocked location access. Please enable location permissions in your browser settings (tap the lock icon in the address bar), then click Re-check.'}
+              {geoStatus === 'unavailable' && 'Your browser does not support geolocation. Please use a modern browser like Chrome or Safari.'}
+              {geoStatus === 'not_configured' && 'The admin has not set the office coordinates yet. Please contact your admin.'}
+            </p>
+
+            {/* Action buttons */}
+            {geoStatus === 'requesting' && (
+              <button
+                onClick={runLocationCheck}
+                className="w-full py-3.5 rounded-2xl bg-[#0c1a2e] hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2.5 transition-all shadow-md cursor-pointer"
+              >
+                <LocateFixed className="w-5 h-5" />
+                Enable Location Access
+              </button>
+            )}
+
+            {geoStatus === 'checking' && (
+              <div className="flex items-center gap-2 text-sky-600 text-sm font-semibold">
+                <span className="w-4 h-4 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
+                Getting your GPS coordinates...
+              </div>
+            )}
+
+            {(geoStatus === 'out_of_range' || geoStatus === 'denied') && (
+              <button
+                onClick={handleRecheck}
+                className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Re-check My Location
+              </button>
+            )}
+
+            {geoStatus === 'out_of_range' && (
+              <p className="text-xs text-slate-400 font-medium">Make sure GPS is enabled on your device</p>
+            )}
+            {geoStatus === 'denied' && (
+              <p className="text-xs text-slate-400 font-medium">
+                In Chrome: tap 🔒 in address bar → Site settings → Location → Allow
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+
 
       {mobileSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />}
 
