@@ -166,12 +166,12 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
       setGeoEnabled(settings.enabled)
       setGeoRadius(settings.radiusMeters)
       if (!settings.enabled) {
-        setGeoStatus('idle') // restriction off, no check needed
+        setGeoStatus('idle')
       } else if (settings.lat === 0 && settings.lng === 0) {
         setGeoStatus('not_configured')
       } else {
         geoSettingsRef.current = { lat: settings.lat, lng: settings.lng, radiusMeters: settings.radiusMeters }
-        setGeoStatus('requesting') // show overlay asking user to allow location
+        runLocationCheck() // auto-check silently in background
       }
     }).catch(() => setGeoStatus('idle'))
   }, [runLocationCheck])
@@ -182,9 +182,8 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
     runLocationCheck()
   }
 
-  // Effective submit permission: time check AND location check
+  // Location ok check (used only on submit)
   const locationOk = !geoEnabled || geoStatus === 'verified'
-  const effectiveCanSubmit = canSubmit && locationOk
 
   React.useEffect(() => {
     const check = () => {
@@ -196,6 +195,20 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setFeedback(null)
+
+    // ── Location check on submit ──────────────────────────────────────────────
+    if (geoEnabled && !locationOk) {
+      const locMsg =
+        geoStatus === 'checking' ? '⏳ Location is still being verified. Please wait a moment and try again.' :
+        geoStatus === 'out_of_range' ? `📍 You are ${distanceM}m away from the office. You must be within ${geoRadius}m to submit.` :
+        geoStatus === 'denied' ? '🚫 Location access denied. Please allow location permission in your browser, then refresh and try again.' :
+        geoStatus === 'unavailable' ? '⚠️ Geolocation is not supported in your browser. Use Chrome or Safari.' :
+        geoStatus === 'not_configured' ? '⚠️ Office location not configured yet. Contact your admin.' :
+        '📍 Location verification failed. Please refresh and try again.'
+      setFeedback({ type: 'error', message: locMsg })
+      return
+    }
+
     let finalDesc = '', finalHours = 0, descBefore: string | undefined, descAfter: string | undefined, hB: number | undefined, hA: number | undefined
 
     if (status === 'Holiday') {
@@ -233,110 +246,8 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
 
   const empInitials = employee.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
-  // ── Location banner config ────────────────────────────────────────────────
-  const geoBanner = geoEnabled ? (() => {
-    switch (geoStatus) {
-      case 'checking': return { bg: 'bg-sky-50 border-sky-200', icon: <Navigation className="w-4 h-4 text-sky-600 animate-pulse" />, text: 'Checking your location...', sub: 'Please wait', color: 'text-sky-800' }
-      case 'verified': return { bg: 'bg-emerald-50 border-emerald-200', icon: <ShieldCheck className="w-4 h-4 text-emerald-600" />, text: `Location verified ✓`, sub: `You are within ${geoRadius}m of office — form unlocked`, color: 'text-emerald-800' }
-      case 'out_of_range': return { bg: 'bg-red-50 border-red-200', icon: <MapPinOff className="w-4 h-4 text-red-600" />, text: `Outside office range`, sub: `You are ${distanceM}m away (limit: ${geoRadius}m). Move to the office to submit.`, color: 'text-red-800' }
-      case 'denied': return { bg: 'bg-amber-50 border-amber-200', icon: <MapPinOff className="w-4 h-4 text-amber-600" />, text: 'Location access denied', sub: 'Please allow location permission in your browser settings, then re-check.', color: 'text-amber-800' }
-      case 'unavailable': return { bg: 'bg-amber-50 border-amber-200', icon: <AlertCircle className="w-4 h-4 text-amber-600" />, text: 'Geolocation not supported', sub: 'Your browser does not support location. Use a modern browser.', color: 'text-amber-800' }
-      case 'not_configured': return { bg: 'bg-slate-50 border-slate-200', icon: <MapPin className="w-4 h-4 text-slate-500" />, text: 'Office location not set', sub: 'Admin has not configured the office location yet. Contact admin.', color: 'text-slate-700' }
-      default: return null
-    }
-  })() : null
-
   return (
     <div className="h-screen overflow-hidden bg-slate-100 flex">
-
-      {/* ── Location Gate Overlay ── shown when geo is enabled and not yet verified ── */}
-      {geoEnabled && geoStatus !== 'idle' && geoStatus !== 'verified' && (
-        <div className="fixed inset-0 z-[100] bg-[#0c1a2e]/95 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center gap-5 text-center">
-
-            {/* Icon */}
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
-              geoStatus === 'loading' || geoStatus === 'requesting' ? 'bg-sky-100'
-              : geoStatus === 'checking' ? 'bg-sky-100'
-              : geoStatus === 'verified' ? 'bg-emerald-100'
-              : geoStatus === 'out_of_range' ? 'bg-red-100'
-              : geoStatus === 'denied' ? 'bg-amber-100'
-              : 'bg-slate-100'
-            }`}>
-              {(geoStatus === 'loading' || geoStatus === 'requesting') && <MapPin className="w-9 h-9 text-sky-600" />}
-              {geoStatus === 'checking' && <LocateFixed className="w-9 h-9 text-sky-600 animate-spin" />}
-              {geoStatus === 'out_of_range' && <MapPinOff className="w-9 h-9 text-red-500" />}
-              {geoStatus === 'denied' && <MapPinOff className="w-9 h-9 text-amber-500" />}
-              {geoStatus === 'unavailable' && <AlertCircle className="w-9 h-9 text-amber-500" />}
-              {geoStatus === 'not_configured' && <MapPin className="w-9 h-9 text-slate-400" />}
-            </div>
-
-            {/* Title */}
-            <div className="flex flex-col gap-1">
-              {(geoStatus === 'loading') && <h3 className="text-lg font-black text-slate-800">Loading...</h3>}
-              {geoStatus === 'requesting' && <h3 className="text-lg font-black text-slate-800">📍 Location Required</h3>}
-              {geoStatus === 'checking' && <h3 className="text-lg font-black text-slate-800">Verifying Location...</h3>}
-              {geoStatus === 'out_of_range' && <h3 className="text-lg font-black text-red-700">❌ Outside Office Range</h3>}
-              {geoStatus === 'denied' && <h3 className="text-lg font-black text-amber-700">⚠️ Location Access Denied</h3>}
-              {geoStatus === 'unavailable' && <h3 className="text-lg font-black text-amber-700">⚠️ Not Supported</h3>}
-              {geoStatus === 'not_configured' && <h3 className="text-lg font-black text-slate-700">Office Not Configured</h3>}
-            </div>
-
-            {/* Description */}
-            <p className="text-sm text-slate-600 leading-relaxed">
-              {geoStatus === 'loading' && 'Please wait...'}
-              {geoStatus === 'requesting' &&
-                `Admin has enabled office-location restriction. You must be physically present at the office (within ${geoRadius}m) to submit your daily log.`}
-              {geoStatus === 'checking' && 'Checking your GPS location. Please wait...'}
-              {geoStatus === 'out_of_range' &&
-                `You are ${distanceM !== null ? distanceM + 'm' : 'too far'} away from the office. The allowed range is ${geoRadius}m. Please go to the office and try again.`}
-              {geoStatus === 'denied' &&
-                'You blocked location access. Please enable location permissions in your browser settings (tap the lock icon in the address bar), then click Re-check.'}
-              {geoStatus === 'unavailable' && 'Your browser does not support geolocation. Please use a modern browser like Chrome or Safari.'}
-              {geoStatus === 'not_configured' && 'The admin has not set the office coordinates yet. Please contact your admin.'}
-            </p>
-
-            {/* Action buttons */}
-            {geoStatus === 'requesting' && (
-              <button
-                onClick={runLocationCheck}
-                className="w-full py-3.5 rounded-2xl bg-[#0c1a2e] hover:bg-slate-800 text-white font-bold text-sm flex items-center justify-center gap-2.5 transition-all shadow-md cursor-pointer"
-              >
-                <LocateFixed className="w-5 h-5" />
-                Enable Location Access
-              </button>
-            )}
-
-            {geoStatus === 'checking' && (
-              <div className="flex items-center gap-2 text-sky-600 text-sm font-semibold">
-                <span className="w-4 h-4 border-2 border-sky-300 border-t-sky-600 rounded-full animate-spin" />
-                Getting your GPS coordinates...
-              </div>
-            )}
-
-            {(geoStatus === 'out_of_range' || geoStatus === 'denied') && (
-              <button
-                onClick={handleRecheck}
-                className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Re-check My Location
-              </button>
-            )}
-
-            {geoStatus === 'out_of_range' && (
-              <p className="text-xs text-slate-400 font-medium">Make sure GPS is enabled on your device</p>
-            )}
-            {geoStatus === 'denied' && (
-              <p className="text-xs text-slate-400 font-medium">
-                In Chrome: tap 🔒 in address bar → Site settings → Location → Allow
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-
 
       {mobileSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />}
 
@@ -513,23 +424,33 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
               <div className="flex-1 min-h-0 bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-y-auto">
                 <div className="p-5 flex flex-col gap-4">
 
-                  {/* ── Geo Location Banner ── */}
-                  {geoBanner && (
-                    <div className={`border rounded-2xl p-3.5 flex items-start gap-3 ${geoBanner.bg}`}>
-                      <div className="shrink-0 mt-0.5">{geoBanner.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-extrabold ${geoBanner.color}`}>{geoBanner.text}</p>
-                        <p className={`text-[10px] font-medium mt-0.5 ${geoBanner.color} opacity-80`}>{geoBanner.sub}</p>
-                      </div>
-                      {(geoStatus === 'out_of_range' || geoStatus === 'denied' || geoStatus === 'checking') && (
-                        <button
-                          type="button"
-                          onClick={handleRecheck}
-                          disabled={geoStatus === 'checking' || geoRechecking}
-                          className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/60 hover:bg-white border border-white/50 text-[10px] font-bold text-slate-600 transition-all cursor-pointer disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${geoRechecking ? 'animate-spin' : ''}`} />
-                          Re-check
+                  {/* ── Compact Location Status Pill ── */}
+                  {geoEnabled && (
+                    <div className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl border text-xs font-semibold ${
+                      geoStatus === 'verified'     ? 'bg-emerald-50 border-emerald-200 text-emerald-800' :
+                      geoStatus === 'checking'     ? 'bg-sky-50 border-sky-200 text-sky-800' :
+                      geoStatus === 'out_of_range' ? 'bg-red-50 border-red-200 text-red-800' :
+                      geoStatus === 'denied'       ? 'bg-amber-50 border-amber-200 text-amber-800' :
+                                                     'bg-slate-50 border-slate-200 text-slate-600'
+                    }`}>
+                      {geoStatus === 'verified'     && <ShieldCheck className="w-3.5 h-3.5 shrink-0" />}
+                      {geoStatus === 'checking'     && <Navigation className="w-3.5 h-3.5 shrink-0 animate-pulse" />}
+                      {geoStatus === 'out_of_range' && <MapPinOff className="w-3.5 h-3.5 shrink-0" />}
+                      {geoStatus === 'denied'       && <MapPinOff className="w-3.5 h-3.5 shrink-0" />}
+                      {!['verified','checking','out_of_range','denied'].includes(geoStatus) && <MapPin className="w-3.5 h-3.5 shrink-0" />}
+                      <span className="flex-1">
+                        {geoStatus === 'verified'     && `📍 At office ✓ — within ${geoRadius}m`}
+                        {geoStatus === 'checking'     && 'Checking your location...'}
+                        {geoStatus === 'out_of_range' && `⚠ ${distanceM}m away — must be within ${geoRadius}m to save`}
+                        {geoStatus === 'denied'       && '⚠ Location access denied — allow in browser to save'}
+                        {geoStatus === 'not_configured' && 'Office location not configured — contact admin'}
+                        {geoStatus === 'unavailable'  && 'Geolocation not supported in this browser'}
+                        {geoStatus === 'idle'         && ''}
+                      </span>
+                      {(geoStatus === 'out_of_range' || geoStatus === 'denied') && (
+                        <button type="button" onClick={handleRecheck}
+                          className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg bg-white/70 hover:bg-white border border-white/50 text-[10px] font-bold text-slate-600 transition-all cursor-pointer">
+                          <RefreshCw className="w-3 h-3" /> Re-check
                         </button>
                       )}
                     </div>
@@ -569,7 +490,7 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           { val: 'Half Day' as const, emoji: '🌤️', color: 'sky' },
                           { val: 'Holiday' as const, emoji: '🏖️', color: 'amber' },
                         ]).map(({ val, emoji, color }) => (
-                          <button key={val} type="button" disabled={!effectiveCanSubmit} onClick={() => { setStatus(val); setFeedback(null) }}
+                          <button key={val} type="button" disabled={!canSubmit} onClick={() => { setStatus(val); setFeedback(null) }}
                             className={`py-3 rounded-2xl border-2 text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-1 disabled:opacity-50 ${
                               status === val
                                 ? color === 'emerald' ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
@@ -587,7 +508,7 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                     {status === 'Half Day' && (
                       <div className="flex gap-2">
                         {(['Before Lunch', 'After Lunch'] as const).map(p => (
-                          <button key={p} type="button" disabled={!effectiveCanSubmit} onClick={() => setHalfDayPeriod(p)}
+                          <button key={p} type="button" onClick={() => setHalfDayPeriod(p)}
                             className={`flex-1 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                               halfDayPeriod === p ? 'border-sky-400 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-500'}`}>
                             {p === 'Before Lunch' ? <Sun className="w-3.5 h-3.5" /> : <Sunset className="w-3.5 h-3.5" />} {p}
@@ -600,7 +521,7 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                       <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/60 flex flex-col gap-3">
                         <span className="text-xs font-extrabold text-amber-900">🏖️ Reason for Leave</span>
                         <BulletInput points={holidayPoints} setPoints={setHolidayPoints} inputVal={holidayInput} setInputVal={setHolidayInput}
-                          placeholder="e.g. Medical leave, family function..." disabled={!effectiveCanSubmit} accent="amber" />
+                          placeholder="e.g. Medical leave, family function..." disabled={false} accent="amber" />
                       </div>
                     )}
 
@@ -610,13 +531,13 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           <span className="text-xs font-extrabold text-sky-900 flex items-center gap-1.5"><Sun className="w-3.5 h-3.5" /> Before Lunch</span>
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-slate-500">Hours:</span>
-                            <input type="number" min={0.5} max={6} step={0.5} disabled={!effectiveCanSubmit} value={hoursBefore}
+                            <input type="number" min={0.5} max={6} step={0.5} value={hoursBefore}
                               onChange={e => setHoursBefore(parseFloat(e.target.value) || 0)}
                               className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-sky-400 bg-white" />
                           </div>
                         </div>
                         <BulletInput points={beforePoints} setPoints={setBeforePoints} inputVal={beforeInput} setInputVal={setBeforeInput}
-                          placeholder="e.g. Conducted morning assembly..." disabled={!effectiveCanSubmit} accent="sky" />
+                          placeholder="e.g. Conducted morning assembly..." disabled={false} accent="sky" />
                       </div>
                     )}
 
@@ -626,24 +547,22 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           <span className="text-xs font-extrabold text-emerald-900 flex items-center gap-1.5"><Sunset className="w-3.5 h-3.5" /> After Lunch</span>
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-slate-500">Hours:</span>
-                            <input type="number" min={0.5} max={6} step={0.5} disabled={!effectiveCanSubmit} value={hoursAfter}
+                            <input type="number" min={0.5} max={6} step={0.5} value={hoursAfter}
                               onChange={e => setHoursAfter(parseFloat(e.target.value) || 0)}
                               className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-emerald-400 bg-white" />
                           </div>
                         </div>
                         <BulletInput points={afterPoints} setPoints={setAfterPoints} inputVal={afterInput} setInputVal={setAfterInput}
-                          placeholder="e.g. Supervised student activities..." disabled={!effectiveCanSubmit} accent="emerald" />
+                          placeholder="e.g. Supervised student activities..." disabled={false} accent="emerald" />
                       </div>
                     )}
 
                     {/* Submit button */}
-                    <button type="submit" disabled={loading || !effectiveCanSubmit}
+                    <button type="submit" disabled={loading || !canSubmit}
                       className="w-full py-3 rounded-2xl bg-[#0c1a2e] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-widest shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2">
                       {loading
                         ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>
-                        : geoEnabled && geoStatus !== 'verified'
-                          ? <><MapPin className="w-3.5 h-3.5" /> Location Required to Submit</>
-                          : todayLog ? '✏️  Update Log Entry' : '✅  Submit Log Entry'}
+                        : todayLog ? '✏️  Update Log Entry' : '✅  Submit Log Entry'}
                     </button>
                   </form>
                 </div>
