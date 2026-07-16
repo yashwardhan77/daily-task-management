@@ -3,17 +3,29 @@
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/logo'
-import { submitTaskAction, logoutAction, getEmployeeLogsAction } from '@/lib/actions/tasks'
+import { submitTaskAction, logoutAction, getEmployeeLogsAction, getGeoSettingsAction } from '@/lib/actions/tasks'
 import { Employee, TaskLog } from '@/lib/actions/mockDb'
 import {
   Clock, ClipboardList, LogOut, CheckCircle, AlertCircle,
   Check, LayoutDashboard, ChevronLeft, ChevronRight, Menu,
-  CalendarDays, Plus, X, ListChecks, Sun, Sunset
+  CalendarDays, Plus, X, ListChecks, Sun, Sunset,
+  MapPin, MapPinOff, Navigation, RefreshCw, ShieldCheck
 } from 'lucide-react'
 
 interface EmployeeDashboardClientProps {
   employee: Employee
   initialLogs: TaskLog[]
+}
+
+// ── Haversine distance (meters) ───────────────────────────────────────────────
+function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const φ1 = lat1 * Math.PI / 180
+  const φ2 = lat2 * Math.PI / 180
+  const Δφ = (lat2 - lat1) * Math.PI / 180
+  const Δλ = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
 // ── Bullet Point Input ────────────────────────────────────────────────────────
@@ -34,7 +46,7 @@ function BulletInput({ points, setPoints, inputVal, setInputVal, placeholder, di
       {points.length > 0 && (
         <ul className="flex flex-col gap-1">
           {points.map((p, i) => (
-            <li key={i} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm group">
+            <li key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm group">
               <span className={`${colors.dot} font-black shrink-0 text-base leading-none`}>•</span>
               <span className="flex-1 text-slate-700 font-medium text-xs leading-snug">{p}</span>
               <button type="button" onClick={() => setPoints(points.filter((_, j) => j !== i))} disabled={disabled}
@@ -105,9 +117,7 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
   const [status, setStatus] = useState<'Full Day' | 'Half Day' | 'Holiday'>(() =>
     (todayLog?.status === 'Full Day' || todayLog?.status === 'Half Day' || todayLog?.status === 'Holiday') ? todayLog.status : 'Full Day'
   )
-  const [halfDayPeriod, setHalfDayPeriod] = useState<'Before Lunch' | 'After Lunch'>(() =>
-    todayLog?.status === 'Half Day' && todayLog.hoursBefore && todayLog.hoursBefore > 0 ? 'Before Lunch' : 'Before Lunch'
-  )
+  const [halfDayPeriod, setHalfDayPeriod] = useState<'Before Lunch' | 'After Lunch'>('Before Lunch')
   const [hoursBefore, setHoursBefore] = useState(() => todayLog?.hoursBefore ?? 4)
   const [hoursAfter, setHoursAfter] = useState(() => todayLog?.hoursAfter ?? 4)
 
@@ -123,6 +133,62 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [canSubmit, setCanSubmit] = useState(true)
   const [timeWarning, setTimeWarning] = useState<string | null>(null)
+
+  // ── Geo-restriction state ───────────────────────────────────────────────────
+  type GeoStatus = 'idle' | 'checking' | 'verified' | 'out_of_range' | 'denied' | 'unavailable' | 'not_configured'
+  const [geoEnabled, setGeoEnabled] = useState(false)
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle')
+  const [distanceM, setDistanceM] = useState<number | null>(null)
+  const [geoRadius, setGeoRadius] = useState(50)
+  const [geoRechecking, setGeoRechecking] = useState(false)
+  const geoSettingsRef = React.useRef<{ lat: number; lng: number; radiusMeters: number } | null>(null)
+
+  const runLocationCheck = React.useCallback((settings: { lat: number; lng: number; radiusMeters: number }) => {
+    if (!navigator.geolocation) {
+      setGeoStatus('unavailable')
+      return
+    }
+    setGeoStatus('checking')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const dist = getDistanceMeters(pos.coords.latitude, pos.coords.longitude, settings.lat, settings.lng)
+        setDistanceM(Math.round(dist))
+        setGeoStatus(dist <= settings.radiusMeters ? 'verified' : 'out_of_range')
+        setGeoRechecking(false)
+      },
+      () => {
+        setGeoStatus('denied')
+        setGeoRechecking(false)
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    )
+  }, [])
+
+  React.useEffect(() => {
+    getGeoSettingsAction().then(settings => {
+      setGeoEnabled(settings.enabled)
+      setGeoRadius(settings.radiusMeters)
+      if (settings.enabled) {
+        if (settings.lat === 0 && settings.lng === 0) {
+          setGeoStatus('not_configured')
+        } else {
+          geoSettingsRef.current = { lat: settings.lat, lng: settings.lng, radiusMeters: settings.radiusMeters }
+          runLocationCheck({ lat: settings.lat, lng: settings.lng, radiusMeters: settings.radiusMeters })
+        }
+      }
+    })
+  }, [runLocationCheck])
+
+  const handleRecheck = () => {
+    if (!geoSettingsRef.current) return
+    setGeoRechecking(true)
+    setDistanceM(null)
+    runLocationCheck(geoSettingsRef.current)
+  }
+
+  // Effective submit permission: time check AND location check
+  const locationOk = !geoEnabled || geoStatus === 'verified'
+  const effectiveCanSubmit = canSubmit && locationOk
 
   React.useEffect(() => {
     const check = () => {
@@ -171,17 +237,28 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
 
   const empInitials = employee.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
+  // ── Location banner config ────────────────────────────────────────────────
+  const geoBanner = geoEnabled ? (() => {
+    switch (geoStatus) {
+      case 'checking': return { bg: 'bg-sky-50 border-sky-200', icon: <Navigation className="w-4 h-4 text-sky-600 animate-pulse" />, text: 'Checking your location...', sub: 'Please wait', color: 'text-sky-800' }
+      case 'verified': return { bg: 'bg-emerald-50 border-emerald-200', icon: <ShieldCheck className="w-4 h-4 text-emerald-600" />, text: `Location verified ✓`, sub: `You are within ${geoRadius}m of office — form unlocked`, color: 'text-emerald-800' }
+      case 'out_of_range': return { bg: 'bg-red-50 border-red-200', icon: <MapPinOff className="w-4 h-4 text-red-600" />, text: `Outside office range`, sub: `You are ${distanceM}m away (limit: ${geoRadius}m). Move to the office to submit.`, color: 'text-red-800' }
+      case 'denied': return { bg: 'bg-amber-50 border-amber-200', icon: <MapPinOff className="w-4 h-4 text-amber-600" />, text: 'Location access denied', sub: 'Please allow location permission in your browser settings, then re-check.', color: 'text-amber-800' }
+      case 'unavailable': return { bg: 'bg-amber-50 border-amber-200', icon: <AlertCircle className="w-4 h-4 text-amber-600" />, text: 'Geolocation not supported', sub: 'Your browser does not support location. Use a modern browser.', color: 'text-amber-800' }
+      case 'not_configured': return { bg: 'bg-slate-50 border-slate-200', icon: <MapPin className="w-4 h-4 text-slate-500" />, text: 'Office location not set', sub: 'Admin has not configured the office location yet. Contact admin.', color: 'text-slate-700' }
+      default: return null
+    }
+  })() : null
+
   return (
     <div className="h-screen overflow-hidden bg-slate-100 flex">
 
-      {/* Mobile overlay */}
       {mobileSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />}
 
       {/* ── Sidebar ── */}
       <aside className={`fixed top-0 left-0 h-full z-50 flex flex-col bg-[#0c1a2e] text-white transition-all duration-300 shadow-2xl
         ${sidebarCollapsed ? 'w-16' : 'w-64'} ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
 
-        {/* Logo */}
         <div className={`flex items-center border-b border-white/8 shrink-0 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 p-4'}`}>
           <Logo size={34} className="rounded-lg border border-white/20 bg-white shrink-0" />
           {!sidebarCollapsed && (
@@ -195,7 +272,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
           </button>
         </div>
 
-        {/* Employee pill */}
         {!sidebarCollapsed && (
           <div className="mx-3 mt-3 p-3 rounded-xl bg-white/8 border border-white/8 flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-amber-400 flex items-center justify-center text-amber-900 font-black text-xs shrink-0">{empInitials}</div>
@@ -206,7 +282,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
           </div>
         )}
 
-        {/* Nav */}
         <nav className="flex-1 px-2 py-3 flex flex-col gap-1">
           {[
             { key: 'log' as const, icon: <LayoutDashboard className="w-4 h-4 shrink-0" />, label: 'Submit Daily Log' },
@@ -225,7 +300,23 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
 
           <div className="my-1 border-t border-white/8" />
 
-          {/* Mini attendance dots */}
+          {/* Geo status pill in sidebar */}
+          {geoEnabled && !sidebarCollapsed && (
+            <div className={`mx-1 px-3 py-2 rounded-xl flex items-center gap-2 text-xs font-semibold ${
+              geoStatus === 'verified' ? 'bg-emerald-500/20 text-emerald-300' :
+              geoStatus === 'checking' ? 'bg-sky-500/20 text-sky-300' :
+              'bg-red-500/20 text-red-300'
+            }`}>
+              <MapPin className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">
+                {geoStatus === 'verified' ? 'At Office ✓' :
+                 geoStatus === 'checking' ? 'Checking...' :
+                 geoStatus === 'out_of_range' ? `${distanceM}m away` :
+                 'Location needed'}
+              </span>
+            </div>
+          )}
+
           {!sidebarCollapsed && (
             <>
               <div className="px-3 py-1 flex items-center gap-1.5">
@@ -254,7 +345,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
           )}
         </nav>
 
-        {/* Logout */}
         <div className="p-3 border-t border-white/8">
           <button onClick={async () => { await logoutAction('employee'); router.push('/'); router.refresh() }}
             className={`flex items-center gap-3 w-full px-3 py-2 rounded-xl hover:bg-red-500/15 transition-colors cursor-pointer ${sidebarCollapsed ? 'justify-center' : ''}`}>
@@ -267,7 +357,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
       {/* ── Main ── */}
       <div className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'}`}>
 
-        {/* Header */}
         <header className="shrink-0 bg-white/95 backdrop-blur border-b border-slate-200/80 shadow-sm">
           <div className="flex items-center justify-between px-4 sm:px-5 py-2.5">
             <div className="flex items-center gap-3">
@@ -278,13 +367,10 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                 <h2 className="text-sm font-black text-slate-800 tracking-tight leading-tight">
                   {activeSection === 'log' ? 'दैनिक कार्य प्रविष्टि' : 'पूर्व प्रविष्टियां'}
                 </h2>
-                <p className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
-                  {employee.name} · {employee.role}
-                </p>
+                <p className="text-[9px] text-slate-400 font-semibold uppercase tracking-wider">{employee.name} · {employee.role}</p>
               </div>
             </div>
 
-            {/* Compact stats in header */}
             <div className="hidden sm:flex items-center gap-1">
               <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${
                 todayLog ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
@@ -301,7 +387,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
           </div>
         </header>
 
-        {/* ── Body — no page-level scroll ── */}
         <div className="flex-1 overflow-hidden flex flex-col p-3 sm:p-4 gap-3 min-h-0">
 
           {/* Compact 14-Day Attendance Strip */}
@@ -335,13 +420,35 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
             </div>
           </div>
 
-          {/* Two-panel grid — fills remaining space, no page scroll */}
+          {/* Two-panel grid */}
           <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3">
 
             {/* ── Form Panel ── */}
             <div className={`lg:col-span-7 min-h-0 flex flex-col overflow-hidden ${activeSection === 'history' ? 'hidden lg:flex' : 'flex'}`}>
               <div className="flex-1 min-h-0 bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-y-auto">
                 <div className="p-5 flex flex-col gap-4">
+
+                  {/* ── Geo Location Banner ── */}
+                  {geoBanner && (
+                    <div className={`border rounded-2xl p-3.5 flex items-start gap-3 ${geoBanner.bg}`}>
+                      <div className="shrink-0 mt-0.5">{geoBanner.icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-extrabold ${geoBanner.color}`}>{geoBanner.text}</p>
+                        <p className={`text-[10px] font-medium mt-0.5 ${geoBanner.color} opacity-80`}>{geoBanner.sub}</p>
+                      </div>
+                      {(geoStatus === 'out_of_range' || geoStatus === 'denied' || geoStatus === 'checking') && (
+                        <button
+                          type="button"
+                          onClick={handleRecheck}
+                          disabled={geoStatus === 'checking' || geoRechecking}
+                          className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/60 hover:bg-white border border-white/50 text-[10px] font-bold text-slate-600 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${geoRechecking ? 'animate-spin' : ''}`} />
+                          Re-check
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Form header */}
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -354,7 +461,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                     </span>
                   </div>
 
-                  {/* Alerts */}
                   {timeWarning && (
                     <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs font-semibold flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" /> {timeWarning}
@@ -378,7 +484,7 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           { val: 'Half Day' as const, emoji: '🌤️', color: 'sky' },
                           { val: 'Holiday' as const, emoji: '🏖️', color: 'amber' },
                         ]).map(({ val, emoji, color }) => (
-                          <button key={val} type="button" disabled={!canSubmit} onClick={() => { setStatus(val); setFeedback(null) }}
+                          <button key={val} type="button" disabled={!effectiveCanSubmit} onClick={() => { setStatus(val); setFeedback(null) }}
                             className={`py-3 rounded-2xl border-2 text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-1 disabled:opacity-50 ${
                               status === val
                                 ? color === 'emerald' ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
@@ -393,11 +499,10 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                       </div>
                     </div>
 
-                    {/* Half day period */}
                     {status === 'Half Day' && (
                       <div className="flex gap-2">
                         {(['Before Lunch', 'After Lunch'] as const).map(p => (
-                          <button key={p} type="button" disabled={!canSubmit} onClick={() => setHalfDayPeriod(p)}
+                          <button key={p} type="button" disabled={!effectiveCanSubmit} onClick={() => setHalfDayPeriod(p)}
                             className={`flex-1 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
                               halfDayPeriod === p ? 'border-sky-400 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-500'}`}>
                             {p === 'Before Lunch' ? <Sun className="w-3.5 h-3.5" /> : <Sunset className="w-3.5 h-3.5" />} {p}
@@ -406,54 +511,54 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                       </div>
                     )}
 
-                    {/* Holiday input */}
                     {status === 'Holiday' && (
                       <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/60 flex flex-col gap-3">
                         <span className="text-xs font-extrabold text-amber-900">🏖️ Reason for Leave</span>
                         <BulletInput points={holidayPoints} setPoints={setHolidayPoints} inputVal={holidayInput} setInputVal={setHolidayInput}
-                          placeholder="e.g. Medical leave, family function..." disabled={!canSubmit} accent="amber" />
+                          placeholder="e.g. Medical leave, family function..." disabled={!effectiveCanSubmit} accent="amber" />
                       </div>
                     )}
 
-                    {/* Before Lunch */}
                     {status !== 'Holiday' && (status === 'Full Day' || (status === 'Half Day' && halfDayPeriod === 'Before Lunch')) && (
                       <div className="p-4 bg-sky-50/50 rounded-2xl border border-sky-200/60 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-extrabold text-sky-900 flex items-center gap-1.5"><Sun className="w-3.5 h-3.5" /> Before Lunch</span>
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-slate-500">Hours:</span>
-                            <input type="number" min={0.5} max={6} step={0.5} disabled={!canSubmit} value={hoursBefore}
+                            <input type="number" min={0.5} max={6} step={0.5} disabled={!effectiveCanSubmit} value={hoursBefore}
                               onChange={e => setHoursBefore(parseFloat(e.target.value) || 0)}
                               className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-sky-400 bg-white" />
                           </div>
                         </div>
                         <BulletInput points={beforePoints} setPoints={setBeforePoints} inputVal={beforeInput} setInputVal={setBeforeInput}
-                          placeholder="e.g. Conducted morning assembly..." disabled={!canSubmit} accent="sky" />
+                          placeholder="e.g. Conducted morning assembly..." disabled={!effectiveCanSubmit} accent="sky" />
                       </div>
                     )}
 
-                    {/* After Lunch */}
                     {status !== 'Holiday' && (status === 'Full Day' || (status === 'Half Day' && halfDayPeriod === 'After Lunch')) && (
                       <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200/60 flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-extrabold text-emerald-900 flex items-center gap-1.5"><Sunset className="w-3.5 h-3.5" /> After Lunch</span>
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-slate-500">Hours:</span>
-                            <input type="number" min={0.5} max={6} step={0.5} disabled={!canSubmit} value={hoursAfter}
+                            <input type="number" min={0.5} max={6} step={0.5} disabled={!effectiveCanSubmit} value={hoursAfter}
                               onChange={e => setHoursAfter(parseFloat(e.target.value) || 0)}
                               className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-emerald-400 bg-white" />
                           </div>
                         </div>
                         <BulletInput points={afterPoints} setPoints={setAfterPoints} inputVal={afterInput} setInputVal={setAfterInput}
-                          placeholder="e.g. Supervised student activities..." disabled={!canSubmit} accent="emerald" />
+                          placeholder="e.g. Supervised student activities..." disabled={!effectiveCanSubmit} accent="emerald" />
                       </div>
                     )}
 
-                    <button type="submit" disabled={loading || !canSubmit}
+                    {/* Submit button */}
+                    <button type="submit" disabled={loading || !effectiveCanSubmit}
                       className="w-full py-3 rounded-2xl bg-[#0c1a2e] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-widest shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2">
                       {loading
                         ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>
-                        : todayLog ? '✏️  Update Log Entry' : '✅  Submit Log Entry'}
+                        : geoEnabled && geoStatus !== 'verified'
+                          ? <><MapPin className="w-3.5 h-3.5" /> Location Required to Submit</>
+                          : todayLog ? '✏️  Update Log Entry' : '✅  Submit Log Entry'}
                     </button>
                   </form>
                 </div>

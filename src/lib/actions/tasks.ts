@@ -503,3 +503,54 @@ export async function deleteEmployeeAction(
 
   return { success: true, message: `Employee ${id} deleted successfully!` }
 }
+
+/**
+ * Get geo-restriction settings (readable by employee & admin)
+ */
+export async function getGeoSettingsAction(): Promise<{
+  enabled: boolean
+  lat: number
+  lng: number
+  radiusMeters: number
+}> {
+  try {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .select('key, value')
+
+    if (error || !data) return { enabled: false, lat: 0, lng: 0, radiusMeters: 50 }
+
+    const map = Object.fromEntries(data.map((r: { key: string; value: string }) => [r.key, r.value]))
+    return {
+      enabled: map['geo_restriction_enabled'] === 'true',
+      lat: parseFloat(map['office_lat'] || '0'),
+      lng: parseFloat(map['office_lng'] || '0'),
+      radiusMeters: parseInt(map['geo_radius_meters'] || '50', 10)
+    }
+  } catch {
+    return { enabled: false, lat: 0, lng: 0, radiusMeters: 50 }
+  }
+}
+
+/**
+ * Update a single app setting (admin only)
+ */
+export async function updateSettingAction(
+  key: string,
+  value: string
+): Promise<{ success: boolean; message: string }> {
+  const isAdmin = await getAdminSession()
+  if (!isAdmin) return { success: false, message: 'Unauthorized.' }
+
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key, value })
+
+  if (error) {
+    console.error('Error updating setting:', error)
+    return { success: false, message: 'Failed to update setting.' }
+  }
+
+  return { success: true, message: 'Setting updated successfully.' }
+}
+
