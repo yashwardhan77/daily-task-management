@@ -82,7 +82,7 @@ export default function AdminDashboardClient({
   const [newEmpId, setNewEmpId] = useState('')
   const [newEmpName, setNewEmpName] = useState('')
   const [newEmpPassword, setNewEmpPassword] = useState('')
-  const [newEmpRole, setNewEmpRole] = useState('Senior Teacher (वरिष्ठ आचार्य)')
+  const [newEmpRole, setNewEmpRole] = useState('Karyalay Prabhari (कार्यालय प्रभारी)')
   const [addFeedback, setAddFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [adding, setAdding] = useState(false)
 
@@ -766,17 +766,22 @@ export default function AdminDashboardClient({
                 <label className="text-xs font-bold text-slate-700" htmlFor="newEmpRole">Job Role (पद / दायित्व)</label>
                 <select id="newEmpRole" value={newEmpRole} onChange={(e) => setNewEmpRole(e.target.value)}
                   className="w-full px-3.5 py-2.5 border border-slate-200 bg-white rounded-xl text-sm focus:outline-none focus:border-emerald-500 font-semibold text-slate-800 cursor-pointer">
-                  <option>Senior Teacher (वरिष्ठ आचार्य)</option>
-                  <option>Primary Teacher (प्राथमिक आचार्य)</option>
-                  <option>Sanskrit Teacher (संस्कृत आचार्य)</option>
-                  <option>Computer Teacher (संगणक आचार्य)</option>
-                  <option>Music &amp; Arts Teacher (संगीत-कला आचार्य)</option>
-                  <option>Sports Instructor (खेल शिक्षक)</option>
-                  <option>Office Coordinator (कार्यालय प्रभारी)</option>
-                  <option>Librarian (पुस्तकालय अध्यक्ष)</option>
-                  <option>Accountant (लेखाकार)</option>
-                  <option>Security Guard (सुरक्षा प्रहरी)</option>
-                  <option>Helper / Support Staff (सहायक)</option>
+                  <option>Kshetriya Pramukh (क्षेत्रीय प्रमुख)</option>
+                  <option>Sahayak Kshetriya Pramukh (सहायक क्षेत्रीय प्रमुख)</option>
+                  <option>Karyalay Prabhari (कार्यालय प्रभारी)</option>
+                  <option>Sahayak Karyalay Prabhari (सहायक कार्यालय प्रभारी)</option>
+                  <option>Lekhakar (लेखाकार)</option>
+                  <option>Sahayak Lekhakar (सहायक लेखाकार)</option>
+                  <option>Karyalay Sahayak (कार्यालय सहायक)</option>
+                  <option>Data Entry Operator (डेटा प्रविष्टि)</option>
+                  <option>IT Prabhari (IT प्रभारी)</option>
+                  <option>Sanghatan Sahayak (संगठन सहायक)</option>
+                  <option>Pracharya Sampark (प्राचार्य संपर्क)</option>
+                  <option>Pracharak (प्रचारक)</option>
+                  <option>Driver (वाहन चालक)</option>
+                  <option>Suraksha Prahari (सुरक्षा प्रहरी)</option>
+                  <option>Karyalay Sevak (कार्यालय सेवक)</option>
+                  <option>Sahayak (सहायक)</option>
                 </select>
               </div>
 
@@ -878,25 +883,22 @@ export default function AdminDashboardClient({
                 <label className="text-xs font-bold text-slate-700">Job Role</label>
                 <select value={editRole} onChange={e => setEditRole(e.target.value)}
                   className="w-full px-3.5 py-2.5 border border-slate-200 bg-white rounded-xl text-sm focus:outline-none focus:border-sky-500 font-semibold text-slate-800 cursor-pointer">
-                  <option>Pradhan Acharya (Principal)</option>
-                  <option>Senior Teacher (वरिष्ठ आचार्य)</option>
-                  <option>Primary Teacher (प्राथमिक आचार्य)</option>
-                  <option>Sanskrit Teacher (संस्कृत आचार्य)</option>
-                  <option>Science Teacher</option>
-                  <option>Maths Teacher</option>
-                  <option>Computer Teacher (संगणक आचार्य)</option>
-                  <option>Music &amp; Arts Teacher (संगीत-कला आचार्य)</option>
-                  <option>Sports Instructor (खेल शिक्षक)</option>
-                  <option>Office Coordinator (कार्यालय प्रभारी)</option>
-                  <option>Librarian (पुस्तकालय अध्यक्ष)</option>
-                  <option>Accountant (लेखाकार)</option>
-                  <option>Physical Trainer (P.T.I)</option>
-                  <option>Store Keeper</option>
-                  <option>Accounts Administrator</option>
-                  <option>System Administrator</option>
-                  <option>Support Staff / Sewadar</option>
-                  <option>Security Guard (सुरक्षा प्रहरी)</option>
-                  <option>Helper / Support Staff (सहायक)</option>
+                  <option>Kshetriya Pramukh (क्षेत्रीय प्रमुख)</option>
+                  <option>Sahayak Kshetriya Pramukh (सहायक क्षेत्रीय प्रमुख)</option>
+                  <option>Karyalay Prabhari (कार्यालय प्रभारी)</option>
+                  <option>Sahayak Karyalay Prabhari (सहायक कार्यालय प्रभारी)</option>
+                  <option>Lekhakar (लेखाकार)</option>
+                  <option>Sahayak Lekhakar (सहायक लेखाकार)</option>
+                  <option>Karyalay Sahayak (कार्यालय सहायक)</option>
+                  <option>Data Entry Operator (डेटा प्रविष्टि)</option>
+                  <option>IT Prabhari (IT प्रभारी)</option>
+                  <option>Sanghatan Sahayak (संगठन सहायक)</option>
+                  <option>Pracharya Sampark (प्राचार्य संपर्क)</option>
+                  <option>Pracharak (प्रचारक)</option>
+                  <option>Driver (वाहन चालक)</option>
+                  <option>Suraksha Prahari (सुरक्षा प्रहरी)</option>
+                  <option>Karyalay Sevak (कार्यालय सेवक)</option>
+                  <option>Sahayak (सहायक)</option>
                 </select>
               </div>
               <div className="flex items-center gap-3 pt-1">

@@ -537,7 +537,7 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           </div>
                         </div>
                         <BulletInput points={beforePoints} setPoints={setBeforePoints} inputVal={beforeInput} setInputVal={setBeforeInput}
-                          placeholder="e.g. Conducted morning assembly..." disabled={false} accent="sky" />
+                          placeholder="e.g. कार्यालय में पत्र प्राप्त किए..." disabled={false} accent="sky" />
                       </div>
                     )}
 
@@ -553,7 +553,7 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           </div>
                         </div>
                         <BulletInput points={afterPoints} setPoints={setAfterPoints} inputVal={afterInput} setInputVal={setAfterInput}
-                          placeholder="e.g. Supervised student activities..." disabled={false} accent="emerald" />
+                          placeholder="e.g. अनुवर्ती कार्य पूर्ण किए..." disabled={false} accent="emerald" />
                       </div>
                     )}
 
