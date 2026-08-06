@@ -5,6 +5,15 @@ import { useRouter } from 'next/navigation'
 import Logo from '@/components/logo'
 import { logoutAction, getAdminLogsAction, addEmployeeAction, editEmployeeAction, deleteEmployeeAction, getEmployeesAction, updateSettingAction, getGeoSettingsAction } from '@/lib/actions/tasks'
 import { TaskLog } from '@/lib/actions/mockDb'
+
+// Parse bullet-point description string into array of clean strings
+function parsePoints(text: string | undefined): string[] {
+  if (!text) return []
+  return text
+    .split('•')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
 import * as XLSX from 'xlsx'
 import {
   Calendar,
@@ -635,70 +644,143 @@ export default function AdminDashboardClient({
                 else if (log.status === 'Holiday') avatarGrad = 'from-amber-500 to-orange-600 text-white'
                 else if (isPending) avatarGrad = 'from-red-400 to-rose-600 text-white'
 
+                const beforePoints = parsePoints(log.descriptionBefore)
+                const afterPoints = parsePoints(log.descriptionAfter)
+                const hasStructured = beforePoints.length > 0 || afterPoints.length > 0
+
                 return (
                   <div
                     key={log.id}
                     onClick={() => !isPending && setSelectedLog(log)}
-                    className={`bg-white rounded-2xl border p-5 shadow-sm transition-all duration-200 flex flex-col justify-between gap-4 relative overflow-hidden group ${
+                    className={`bg-white rounded-2xl border shadow-sm transition-all duration-200 flex flex-col relative overflow-hidden group ${
                       isPending
-                        ? 'border-red-100 bg-red-50/10 opacity-80 cursor-default'
-                        : 'border-slate-200 hover:border-slate-300 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer'
+                        ? 'border-red-100 bg-red-50/20 opacity-80 cursor-default'
+                        : 'border-slate-200 hover:border-emerald-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer'
                     }`}
                   >
-                    <div className="flex flex-col gap-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-xs font-black shadow-inner shrink-0`}>
-                            {initials}
-                          </div>
-                          <div>
-                            <h4 className="font-extrabold text-slate-800 text-sm leading-tight group-hover:text-emerald-800 transition-colors">
-                              {log.employeeName}
-                            </h4>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">
-                              {log.employeeRole} · {log.employeeId}
-                            </p>
-                          </div>
+                    {/* Card Header */}
+                    <div className={`px-5 pt-5 pb-4 flex items-start justify-between gap-3 border-b ${
+                      isPending ? 'border-red-100' : 'border-slate-100'
+                    }`}>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-sm font-black shadow-md shrink-0`}>
+                          {initials}
                         </div>
-
-                        <span className={`text-[9px] uppercase tracking-widest font-extrabold px-2.5 py-1 rounded-lg border shrink-0 ${
-                          log.status === 'Full Day' ? 'bg-emerald-50 text-emerald-800 border-emerald-200/30'
-                          : log.status === 'Half Day' ? 'bg-sky-50 text-sky-800 border-sky-200/30'
-                          : log.status === 'Holiday' ? 'bg-amber-50 text-amber-800 border-amber-200/30'
-                          : 'bg-red-50 text-red-800 border-red-200/30 animate-pulse'
-                        }`}>
-                          {log.status}
-                        </span>
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-100">
-                        {isPending ? (
-                          <p className="text-xs leading-relaxed text-red-500/80 italic font-medium">
-                            No task log submitted yet.
+                        <div>
+                          <h4 className="font-extrabold text-slate-800 text-sm leading-tight group-hover:text-emerald-800 transition-colors">
+                            {log.employeeName}
+                          </h4>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-0.5 truncate max-w-[180px]">
+                            {log.employeeRole}
                           </p>
-                        ) : (
-                          <p className="text-xs leading-relaxed text-slate-600 font-medium line-clamp-3">
-                            {log.description}
+                          <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mt-0.5">
+                            {log.employeeId}
                           </p>
-                        )}
+                        </div>
                       </div>
+                      <span className={`text-[9px] uppercase tracking-widest font-extrabold px-2.5 py-1.5 rounded-lg border shrink-0 mt-0.5 ${
+                        log.status === 'Full Day' ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : log.status === 'Half Day' ? 'bg-sky-50 text-sky-800 border-sky-200'
+                        : log.status === 'Holiday' ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-red-50 text-red-700 border-red-200 animate-pulse'
+                      }`}>
+                        {log.status}
+                      </span>
                     </div>
 
-                    <div className="border-t border-slate-100 pt-3 flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      <span className="flex items-center gap-1.5">
+                    {/* Card Body */}
+                    <div className="px-5 py-4 flex flex-col gap-3 flex-1">
+                      {isPending ? (
+                        <div className="flex items-center gap-2 py-1">
+                          <div className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                          <p className="text-xs text-red-400 italic font-medium">No task log submitted yet.</p>
+                        </div>
+                      ) : log.status === 'Holiday' ? (
+                        <div className="flex items-start gap-2">
+                          <span className="text-base mt-0.5">🌴</span>
+                          <p className="text-xs text-amber-700 font-semibold leading-relaxed">{log.description}</p>
+                        </div>
+                      ) : hasStructured ? (
+                        <div className="flex flex-col gap-3">
+                          {/* Before Lunch */}
+                          {beforePoints.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />
+                                <span className="text-[9px] font-extrabold text-sky-700 uppercase tracking-widest">
+                                  Before Lunch {log.hoursBefore ? `· ${log.hoursBefore}h` : ''}
+                                </span>
+                              </div>
+                              <div className="flex flex-col gap-1 pl-3">
+                                {beforePoints.slice(0, 3).map((pt, i) => (
+                                  <div key={i} className="flex items-start gap-1.5">
+                                    <span className="text-sky-400 text-[10px] mt-0.5 shrink-0">▸</span>
+                                    <span className="text-xs text-slate-700 font-medium leading-snug">{pt}</span>
+                                  </div>
+                                ))}
+                                {beforePoints.length > 3 && (
+                                  <span className="text-[10px] text-slate-400 font-semibold pl-3">+{beforePoints.length - 3} more…</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          {/* After Lunch */}
+                          {afterPoints.length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                <span className="text-[9px] font-extrabold text-emerald-700 uppercase tracking-widest">
+                                  After Lunch {log.hoursAfter ? `· ${log.hoursAfter}h` : ''}
+                                </span>
+                              </div>
+                              <div className="flex flex-col gap-1 pl-3">
+                                {afterPoints.slice(0, 3).map((pt, i) => (
+                                  <div key={i} className="flex items-start gap-1.5">
+                                    <span className="text-emerald-400 text-[10px] mt-0.5 shrink-0">▸</span>
+                                    <span className="text-xs text-slate-700 font-medium leading-snug">{pt}</span>
+                                  </div>
+                                ))}
+                                {afterPoints.length > 3 && (
+                                  <span className="text-[10px] text-slate-400 font-semibold pl-3">+{afterPoints.length - 3} more…</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs leading-relaxed text-slate-600 font-medium line-clamp-4">
+                          {log.description}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Card Footer */}
+                    <div className={`px-5 py-3 border-t flex items-center justify-between ${
+                      isPending ? 'border-red-100 bg-red-50/30' : 'border-slate-100 bg-slate-50/60'
+                    }`}>
+                      <span className="flex items-center gap-1.5 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
                         <Clock className="w-3.5 h-3.5" />
                         {log.status === 'Holiday' ? '0 Hours' : `${log.hours} Hours`}
                       </span>
                       {!isPending ? (
-                        <span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg border border-emerald-100 text-[8px] tracking-widest font-extrabold">
+                        <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-200 text-[9px] tracking-widest font-extrabold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                           Submitted
                         </span>
                       ) : (
-                        <span className="bg-red-50 text-red-600 px-2 py-1 rounded-lg border border-red-100 text-[8px] tracking-widest font-extrabold animate-pulse">
+                        <span className="bg-red-50 text-red-600 px-2.5 py-1 rounded-lg border border-red-200 text-[9px] tracking-widest font-extrabold animate-pulse flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
                           Missing
                         </span>
                       )}
                     </div>
+
+                    {/* Click hint for submitted */}
+                    {!isPending && (
+                      <div className="absolute bottom-11 right-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <span className="text-[9px] text-emerald-600 font-bold tracking-wider">Click to view full log ↗</span>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -943,88 +1025,174 @@ export default function AdminDashboardClient({
       )}
 
       {/* ── Log Detail Modal ── */}
-      {selectedLog && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-lg overflow-hidden shadow-2xl flex flex-col gap-5 relative animate-fade-in-up">
-            <div className="bg-emerald-950 text-white p-6 relative">
-              <button
-                onClick={() => setSelectedLog(null)}
-                className="absolute top-4 right-4 text-white/70 hover:text-white p-1 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
-                aria-label="Close"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              <span className="text-[10px] font-bold text-amber-300 uppercase tracking-widest block mb-1">
-                Log Details — {selectedLog.date}
-              </span>
-              <h3 className="text-xl font-bold text-white">{selectedLog.employeeName}</h3>
-              <p className="text-xs text-slate-300 font-medium mt-1 uppercase tracking-wide">
-                {selectedLog.employeeRole} · {selectedLog.employeeId}
-              </p>
-            </div>
+      {selectedLog && (() => {
+        const modalBeforePoints = parsePoints(selectedLog.descriptionBefore)
+        const modalAfterPoints = parsePoints(selectedLog.descriptionAfter)
+        const modalHasStructured = modalBeforePoints.length > 0 || modalAfterPoints.length > 0
 
-            <div className="px-6 pb-6 flex flex-col gap-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status</span>
-                  <span className="text-sm font-bold text-slate-800">{selectedLog.status}</span>
+        let statusColor = 'bg-slate-100 text-slate-700 border-slate-200'
+        if (selectedLog.status === 'Full Day') statusColor = 'bg-emerald-100 text-emerald-800 border-emerald-200'
+        else if (selectedLog.status === 'Half Day') statusColor = 'bg-sky-100 text-sky-800 border-sky-200'
+        else if (selectedLog.status === 'Holiday') statusColor = 'bg-amber-100 text-amber-800 border-amber-200'
+
+        const initials = selectedLog.employeeName.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)
+        let avatarGrad = 'from-slate-400 to-slate-600'
+        if (selectedLog.status === 'Full Day') avatarGrad = 'from-emerald-500 to-teal-600'
+        else if (selectedLog.status === 'Half Day') avatarGrad = 'from-sky-500 to-indigo-600'
+        else if (selectedLog.status === 'Holiday') avatarGrad = 'from-amber-400 to-orange-500'
+
+        return (
+          <div
+            className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[60] flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) setSelectedLog(null) }}
+          >
+            <div className="bg-white rounded-3xl border border-slate-200 w-full max-w-xl overflow-hidden shadow-2xl flex flex-col animate-fade-in-up max-h-[90vh]">
+
+              {/* Modal Header */}
+              <div className="relative bg-gradient-to-br from-emerald-950 via-emerald-900 to-slate-900 text-white p-6 pb-8 shrink-0">
+                <button
+                  onClick={() => setSelectedLog(null)}
+                  className="absolute top-4 right-4 text-white/60 hover:text-white p-1.5 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${avatarGrad} flex items-center justify-center text-lg font-black shadow-xl shrink-0`}>
+                    {initials}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-amber-300 uppercase tracking-widest mb-1">
+                      {selectedLog.date} &nbsp;·&nbsp; Task Log Detail
+                    </p>
+                    <h3 className="text-xl font-extrabold text-white leading-tight">{selectedLog.employeeName}</h3>
+                    <p className="text-xs text-slate-300 font-medium mt-0.5">
+                      {selectedLog.employeeRole} &nbsp;·&nbsp; {selectedLog.employeeId}
+                    </p>
+                  </div>
                 </div>
-                <div className="p-3 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Hours</span>
-                  <span className="text-sm font-bold text-slate-800">
-                    {selectedLog.status === 'Holiday' ? '0' : selectedLog.hours} Hours
+
+                {/* Status + hours pills */}
+                <div className="flex items-center gap-2 mt-5">
+                  <span className={`text-[10px] uppercase font-extrabold tracking-widest px-3 py-1.5 rounded-lg border ${statusColor}`}>
+                    {selectedLog.status}
                   </span>
+                  <span className="text-[10px] font-extrabold text-white/80 bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg uppercase tracking-widest flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    {selectedLog.status === 'Holiday' ? '0 Hours' : `${selectedLog.hours} Hours Total`}
+                  </span>
+                  {selectedLog.submittedAt && (
+                    <span className="ml-auto text-[9px] text-white/50 font-semibold">
+                      Submitted {new Date(selectedLog.submittedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2">
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
-                  <FileText className="w-3.5 h-3.5" />
-                  {selectedLog.status === 'Holiday' ? 'Holiday Reason' : 'Work Log'}
-                </span>
+              {/* Modal Body */}
+              <div className="overflow-y-auto flex-1 px-6 pb-6 pt-5 flex flex-col gap-4">
+
                 {selectedLog.status === 'Holiday' ? (
-                  <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm text-slate-800 font-medium leading-relaxed whitespace-pre-line max-h-48 overflow-y-auto">
-                    {selectedLog.description}
+                  <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                    <span className="text-2xl mt-0.5">🌴</span>
+                    <div>
+                      <p className="text-xs font-extrabold text-amber-700 uppercase tracking-wider mb-1">Holiday / Leave Reason</p>
+                      <p className="text-sm text-amber-900 font-medium leading-relaxed">{selectedLog.description}</p>
+                    </div>
+                  </div>
+                ) : modalHasStructured ? (
+                  <div className="flex flex-col gap-4">
+
+                    {/* Before Lunch Section */}
+                    {modalBeforePoints.length > 0 && (
+                      <div className="rounded-2xl border border-sky-200 overflow-hidden">
+                        <div className="bg-sky-50 px-4 py-2.5 flex items-center justify-between border-b border-sky-200">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-sky-500" />
+                            <span className="text-[10px] font-extrabold text-sky-800 uppercase tracking-widest">Before Lunch &nbsp;·&nbsp; प्रथम पाली</span>
+                          </div>
+                          {selectedLog.hoursBefore !== undefined && (
+                            <span className="text-[10px] font-extrabold text-sky-700 bg-sky-100 border border-sky-200 px-2 py-0.5 rounded-lg">
+                              {selectedLog.hoursBefore} hrs
+                            </span>
+                          )}
+                        </div>
+                        <div className="px-4 py-3 flex flex-col gap-2 bg-white">
+                          {modalBeforePoints.map((pt, i) => (
+                            <div key={i} className="flex items-start gap-2.5">
+                              <div className="w-5 h-5 rounded-full bg-sky-100 border border-sky-200 flex items-center justify-center shrink-0 mt-0.5">
+                                <span className="text-[9px] font-extrabold text-sky-600">{i + 1}</span>
+                              </div>
+                              <span className="text-sm text-slate-700 font-medium leading-snug">{pt}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* After Lunch Section */}
+                    {modalAfterPoints.length > 0 && (
+                      <div className="rounded-2xl border border-emerald-200 overflow-hidden">
+                        <div className="bg-emerald-50 px-4 py-2.5 flex items-center justify-between border-b border-emerald-200">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                            <span className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-widest">After Lunch &nbsp;·&nbsp; द्वितीय पाली</span>
+                          </div>
+                          {selectedLog.hoursAfter !== undefined && (
+                            <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                              {selectedLog.hoursAfter} hrs
+                            </span>
+                          )}
+                        </div>
+                        <div className="px-4 py-3 flex flex-col gap-2 bg-white">
+                          {modalAfterPoints.map((pt, i) => (
+                            <div key={i} className="flex items-start gap-2.5">
+                              <div className="w-5 h-5 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center shrink-0 mt-0.5">
+                                <span className="text-[9px] font-extrabold text-emerald-600">{i + 1}</span>
+                              </div>
+                              <span className="text-sm text-slate-700 font-medium leading-snug">{pt}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    {selectedLog.descriptionBefore && (
-                      <div className="p-3 bg-sky-50 border border-sky-100 rounded-2xl flex flex-col gap-1.5">
-                        <span className="text-[9px] uppercase font-extrabold text-sky-800 flex justify-between">
-                          <span>Before Lunch (प्रथम पाली)</span>
-                          <span>{selectedLog.hoursBefore ?? 4} hrs</span>
-                        </span>
-                        <p className="text-xs text-slate-800 font-medium leading-relaxed">{selectedLog.descriptionBefore}</p>
-                      </div>
-                    )}
-                    {selectedLog.descriptionAfter && (
-                      <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-2xl flex flex-col gap-1.5">
-                        <span className="text-[9px] uppercase font-extrabold text-emerald-800 flex justify-between">
-                          <span>After Lunch (द्वितीय पाली)</span>
-                          <span>{selectedLog.hoursAfter ?? 4} hrs</span>
-                        </span>
-                        <p className="text-xs text-slate-800 font-medium leading-relaxed">{selectedLog.descriptionAfter}</p>
-                      </div>
-                    )}
-                    {!selectedLog.descriptionBefore && !selectedLog.descriptionAfter && (
-                      <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm text-slate-800 font-medium leading-relaxed whitespace-pre-line">
-                        {selectedLog.description}
-                      </div>
-                    )}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <p className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5" /> Work Description
+                    </p>
+                    <p className="text-sm text-slate-700 font-medium leading-relaxed whitespace-pre-line">
+                      {selectedLog.description}
+                    </p>
+                  </div>
+                )}
+
+                {/* Footer timestamp */}
+                {selectedLog.submittedAt && (
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold border-t border-slate-100 pt-3">
+                    <span>Log submitted by: <strong className="text-slate-600">{selectedLog.employeeName}</strong></span>
+                    <span>{new Date(selectedLog.submittedAt).toLocaleString('en-IN')}</span>
                   </div>
                 )}
               </div>
 
-              {selectedLog.submittedAt && (
-                <div className="text-[10px] text-slate-400 font-semibold flex items-center gap-1 justify-end border-t border-slate-100 pt-4">
-                  <span>Logged at:</span>
-                  <strong className="text-slate-500">{new Date(selectedLog.submittedAt).toLocaleString('en-IN')}</strong>
-                </div>
-              )}
+              {/* Modal close footer button */}
+              <div className="px-6 pb-5 shrink-0">
+                <button
+                  onClick={() => setSelectedLog(null)}
+                  className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── Location Settings Modal ── */}
       {isLocationOpen && (
