@@ -96,6 +96,33 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [activeSection, setActiveSection] = useState<'log' | 'history'>('log')
+  const sidebarRef = React.useRef<HTMLElement>(null)
+
+  // Apply sidebar show/hide via inline styles — works on old mobile browsers
+  React.useEffect(() => {
+    const el = sidebarRef.current
+    if (!el) return
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const apply = () => {
+      if (mq.matches) {
+        el.style.transform = 'translateX(0)'
+        el.style.visibility = 'visible'
+        el.style.width = sidebarCollapsed ? '64px' : '256px'
+      } else {
+        el.style.transform = mobileSidebarOpen ? 'translateX(0)' : 'translateX(-100%)'
+        el.style.visibility = mobileSidebarOpen ? 'visible' : 'hidden'
+        el.style.width = '256px'
+      }
+    }
+    apply()
+    const handler = () => apply()
+    if (mq.addEventListener) mq.addEventListener('change', handler)
+    else mq.addListener?.(handler)
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', handler)
+      else mq.removeListener?.(handler)
+    }
+  }, [mobileSidebarOpen, sidebarCollapsed])
 
   const todayStr = new Date().toISOString().split('T')[0]
   const todayLog = logs.find(l => l.date === todayStr)
@@ -249,11 +276,34 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
   return (
     <div className="h-screen overflow-hidden bg-slate-100 flex">
 
-      {mobileSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setMobileSidebarOpen(false)} />}
+      {/* Mobile backdrop overlay */}
+      <div
+        onClick={() => setMobileSidebarOpen(false)}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.55)',
+          zIndex: 40,
+          display: mobileSidebarOpen ? 'block' : 'none',
+        }}
+      />
 
       {/* ── Sidebar ── */}
-      <aside className={`fixed top-0 left-0 h-full z-50 flex flex-col bg-[#0c1a2e] text-white transition-all duration-300 shadow-2xl
-        ${sidebarCollapsed ? 'w-16' : 'w-64'} ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+      <aside
+        ref={sidebarRef}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100%',
+          width: sidebarCollapsed ? 64 : 256,
+          zIndex: 50,
+          transform: 'translateX(-100%)',
+          visibility: 'hidden',
+          transition: 'transform 0.28s ease, width 0.28s ease',
+        }}
+        className="flex flex-col bg-[#0c1a2e] text-white shadow-2xl"
+      >
 
         <div className={`flex items-center border-b border-white/8 shrink-0 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 p-4'}`}>
           <Logo size={34} className="rounded-lg border border-white/20 bg-white shrink-0" />

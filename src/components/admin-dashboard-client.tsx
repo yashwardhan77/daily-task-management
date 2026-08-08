@@ -76,6 +76,35 @@ export default function AdminDashboardClient({
   const [stats, setStats] = useState<Stats>(initialStats)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
+  const sidebarRef = React.useRef<HTMLElement>(null)
+
+  // Apply sidebar visibility on state change and on media query change
+  React.useEffect(() => {
+    const el = sidebarRef.current
+    if (!el) return
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const apply = () => {
+      if (mq.matches) {
+        // Desktop: always visible
+        el.style.transform = 'translateX(0)'
+        el.style.visibility = 'visible'
+        el.style.width = sidebarCollapsed ? '64px' : '256px'
+      } else {
+        // Mobile: show/hide based on state
+        el.style.transform = mobileSidebarOpen ? 'translateX(0)' : 'translateX(-100%)'
+        el.style.visibility = mobileSidebarOpen ? 'visible' : 'hidden'
+        el.style.width = '256px' // always full width on mobile
+      }
+    }
+    apply()
+    const handler = () => apply()
+    if (mq.addEventListener) mq.addEventListener('change', handler)
+    else mq.addListener?.(handler) // old browsers
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', handler)
+      else mq.removeListener?.(handler)
+    }
+  }, [mobileSidebarOpen, sidebarCollapsed])
 
   // Search and Filter states
   const [searchQuery, setSearchQuery] = useState('')
@@ -324,25 +353,39 @@ export default function AdminDashboardClient({
 
   const completionRate = stats.total > 0 ? Math.round(((stats.total - stats.pending) / stats.total) * 100) : 0
 
+  // On large screens sidebar is always visible; on mobile, show/hide via JS state
+
   return (
     <div className="min-h-screen bg-slate-100 flex">
 
       {/* ── Sidebar ── */}
-      {/* Mobile overlay */}
-      {mobileSidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setMobileSidebarOpen(false)}
-        />
-      )}
+      {/* Mobile backdrop overlay */}
+      <div
+        onClick={() => setMobileSidebarOpen(false)}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.55)',
+          zIndex: 40,
+          display: mobileSidebarOpen ? 'block' : 'none',
+        }}
+      />
 
-      <aside className={`
-        fixed top-0 left-0 h-full z-50 flex flex-col bg-emerald-950 text-white
-        transition-all duration-300 ease-in-out shadow-2xl
-        ${sidebarCollapsed ? 'w-16' : 'w-64'}
-        ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0
-      `}>
+      <aside
+        ref={sidebarRef}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          height: '100%',
+          width: sidebarCollapsed ? 64 : 256,
+          zIndex: 50,
+          transform: 'translateX(-100%)',
+          visibility: 'hidden',
+          transition: 'transform 0.28s ease, width 0.28s ease',
+        }}
+        className="flex flex-col bg-emerald-950 text-white shadow-2xl"
+      >
 
         {/* Sidebar Header */}
         <div className={`flex items-center border-b border-white/10 shrink-0 ${sidebarCollapsed ? 'justify-center p-3' : 'gap-3 p-4'}`}>

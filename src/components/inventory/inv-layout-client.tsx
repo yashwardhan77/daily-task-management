@@ -178,25 +178,33 @@ export default function InvLayoutClient({ user, children }: Props) {
   )
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
-      {/* Desktop sidebar */}
+    <div style={{ display: 'flex', height: '100vh', background: '#f8fafc', overflow: 'hidden', fontFamily: 'inherit' }}>
+      {/* Desktop sidebar — shown via CSS media query */}
       <div className="hidden lg:flex flex-col">
         <Sidebar />
       </div>
 
-      {/* Mobile sidebar overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden flex">
-          <div className="flex flex-col w-72">
-            <Sidebar />
-          </div>
-          <div className="flex-1 bg-black/50" onClick={() => setSidebarOpen(false)} />
+      {/* Mobile sidebar overlay — inline style for old browser compatibility */}
+      <div
+        style={{
+          display: sidebarOpen ? 'flex' : 'none',
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 50,
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', width: 288, flexShrink: 0 }}>
+          <Sidebar />
         </div>
-      )}
+        <div
+          style={{ flex: 1, background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setSidebarOpen(false)}
+        />
+      </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        {/* Top bar (mobile) */}
+        {/* Top bar (mobile only) */}
         <header className="lg:hidden flex items-center gap-4 px-4 py-3 bg-white border-b border-slate-200 flex-shrink-0">
           <button
             onClick={() => setSidebarOpen(true)}
