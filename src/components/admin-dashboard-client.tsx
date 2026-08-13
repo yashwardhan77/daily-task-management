@@ -47,6 +47,7 @@ import {
 interface LogWithEmpDetails extends TaskLog {
   employeeName: string
   employeeRole: string
+  employeeCategory?: string
 }
 
 interface Stats {
@@ -109,6 +110,7 @@ export default function AdminDashboardClient({
   // Search and Filter states
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'All' | 'Full Day' | 'Half Day' | 'Holiday' | 'Pending'>('All')
+  const [categoryFilter, setCategoryFilter] = useState<'All' | 'Prant' | 'Kshetra'>('All')
 
   // Detailed view drawer state
   const [selectedLog, setSelectedLog] = useState<LogWithEmpDetails | null>(null)
@@ -121,19 +123,21 @@ export default function AdminDashboardClient({
   const [newEmpName, setNewEmpName] = useState('')
   const [newEmpPassword, setNewEmpPassword] = useState('')
   const [newEmpRole, setNewEmpRole] = useState('Karyalay Prabhari (कार्यालय प्रभारी)')
+  const [newEmpCategory, setNewEmpCategory] = useState<'Prant' | 'Kshetra'>('Kshetra')
   const [addFeedback, setAddFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [adding, setAdding] = useState(false)
 
   // Manage Employees panel states
   const [isManageOpen, setIsManageOpen] = useState(false)
-  const [employeeList, setEmployeeList] = useState<{ id: string; name: string; role: string; password: string }[]>([])
+  const [employeeList, setEmployeeList] = useState<{ id: string; name: string; role: string; password: string; category: string }[]>([])
   const [loadingEmployees, setLoadingEmployees] = useState(false)
 
   // Edit Employee modal states
-  const [editTarget, setEditTarget] = useState<{ id: string; name: string; role: string; password: string } | null>(null)
+  const [editTarget, setEditTarget] = useState<{ id: string; name: string; role: string; password: string; category: string } | null>(null)
   const [editName, setEditName] = useState('')
   const [editRole, setEditRole] = useState('')
   const [editPassword, setEditPassword] = useState('')
+  const [editCategory, setEditCategory] = useState<'Prant' | 'Kshetra'>('Kshetra')
   const [editFeedback, setEditFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -204,11 +208,12 @@ export default function AdminDashboardClient({
     setLoadingEmployees(false)
   }
 
-  const openEditModal = (emp: { id: string; name: string; role: string; password: string }) => {
+  const openEditModal = (emp: { id: string; name: string; role: string; password: string; category: string }) => {
     setEditTarget(emp)
     setEditName(emp.name)
     setEditRole(emp.role)
     setEditPassword(emp.password)
+    setEditCategory((emp.category === 'Prant' ? 'Prant' : 'Kshetra'))
     setEditFeedback(null)
   }
 
@@ -218,10 +223,10 @@ export default function AdminDashboardClient({
     setEditFeedback(null)
     setSaving(true)
     try {
-      const res = await editEmployeeAction(editTarget.id, editName, editPassword, editRole)
+      const res = await editEmployeeAction(editTarget.id, editName, editPassword, editRole, editCategory)
       if (res.success) {
         setEditFeedback({ type: 'success', message: res.message })
-        setEmployeeList(prev => prev.map(e => e.id === editTarget.id ? { ...e, name: editName, role: editRole, password: editPassword } : e))
+        setEmployeeList(prev => prev.map(e => e.id === editTarget.id ? { ...e, name: editName, role: editRole, password: editPassword, category: editCategory } : e))
         setTimeout(() => { setEditTarget(null); setEditFeedback(null) }, 1200)
         router.refresh()
       } else {
@@ -260,7 +265,8 @@ export default function AdminDashboardClient({
         newEmpId.trim(),
         newEmpName.trim(),
         newEmpPassword.trim(),
-        newEmpRole.trim()
+        newEmpRole.trim(),
+        newEmpCategory
       )
 
       if (res.success) {
@@ -304,6 +310,7 @@ export default function AdminDashboardClient({
         'Log Date': log.date,
         'Employee ID': log.employeeId,
         'Employee Name': log.employeeName,
+        'Category': log.employeeCategory || 'Kshetra',
         'Designation / Role': log.employeeRole,
         'Log Status': log.status,
         'Hours Logged': log.status === 'Holiday' ? 0 : log.hours,
@@ -341,7 +348,8 @@ export default function AdminDashboardClient({
       log.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.employeeRole.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesStatus = statusFilter === 'All' || log.status === statusFilter
-    return matchesSearch && matchesStatus
+    const matchesCategory = categoryFilter === 'All' || (log.employeeCategory || 'Kshetra') === categoryFilter
+    return matchesSearch && matchesStatus && matchesCategory
   })
 
   const displayDateStr = new Date(selectedDate).toLocaleDateString('en-IN', {
@@ -627,35 +635,68 @@ export default function AdminDashboardClient({
           </div>
 
           {/* Filter controls */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between gap-3">
-            <div className="relative text-slate-600 w-full md:max-w-md">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search by name, ID, or description..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500 font-medium placeholder-slate-400 bg-slate-50/50"
-              />
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm flex flex-col gap-3">
+            <div className="flex flex-col md:flex-row justify-between gap-3">
+              <div className="relative text-slate-600 w-full md:max-w-md">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, ID, or description..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-emerald-500 font-medium placeholder-slate-400 bg-slate-50/50"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
+                <span className="text-slate-400 uppercase text-[10px] mr-1 hidden sm:inline-flex items-center gap-1">
+                  <Filter className="w-3 h-3" /> Status:
+                </span>
+                {(['All', 'Full Day', 'Half Day', 'Holiday', 'Pending'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setStatusFilter(filter)}
+                    className={`px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                      statusFilter === filter
+                        ? 'bg-emerald-900 text-white border-emerald-900 shadow-sm'
+                        : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
-              <span className="text-slate-400 uppercase text-[10px] mr-1 hidden sm:inline-flex items-center gap-1">
-                <Filter className="w-3 h-3" /> Filter:
+            {/* Category filter row */}
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
+              <span className="text-slate-400 uppercase text-[10px] mr-1 flex items-center gap-1 font-bold">
+                <Filter className="w-3 h-3" /> वर्ग:
               </span>
-              {(['All', 'Full Day', 'Half Day', 'Holiday', 'Pending'] as const).map((filter) => (
+              {(['All', 'Prant', 'Kshetra'] as const).map((cat) => (
                 <button
-                  key={filter}
-                  onClick={() => setStatusFilter(filter)}
-                  className={`px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
-                    statusFilter === filter
-                      ? 'bg-emerald-900 text-white border-emerald-900 shadow-sm'
+                  key={cat}
+                  onClick={() => setCategoryFilter(cat)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer ${
+                    categoryFilter === cat
+                      ? cat === 'Prant'
+                        ? 'bg-indigo-700 text-white border-indigo-700 shadow-sm'
+                        : cat === 'Kshetra'
+                        ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                        : 'bg-slate-800 text-white border-slate-800 shadow-sm'
                       : 'bg-white hover:bg-slate-50 text-slate-600 border-slate-200'
                   }`}
                 >
-                  {filter}
+                  {cat === 'All' ? 'All Categories' : cat === 'Prant' ? 'प्रांत (Prant)' : 'क्षेत्र (Kshetra)'}
                 </button>
               ))}
+              {categoryFilter !== 'All' && (
+                <span className={`text-[10px] font-extrabold px-2 py-1 rounded-lg ${
+                  categoryFilter === 'Prant' ? 'text-indigo-700 bg-indigo-50 border border-indigo-200' : 'text-orange-700 bg-orange-50 border border-orange-200'
+                }`}>
+                  Showing {filteredLogs.length} {categoryFilter} employees
+                </span>
+              )}
             </div>
           </div>
 
@@ -716,9 +757,18 @@ export default function AdminDashboardClient({
                           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-0.5 truncate max-w-[180px]">
                             {log.employeeRole}
                           </p>
-                          <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mt-0.5">
-                            {log.employeeId}
-                          </p>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+                              {log.employeeId}
+                            </p>
+                            <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
+                              (log.employeeCategory || 'Kshetra') === 'Prant'
+                                ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                : 'bg-orange-100 text-orange-700 border border-orange-200'
+                            }`}>
+                              {(log.employeeCategory || 'Kshetra') === 'Prant' ? 'प्रांत' : 'क्षेत्र'}
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <span className={`text-[9px] uppercase tracking-widest font-extrabold px-2.5 py-1.5 rounded-lg border shrink-0 mt-0.5 ${
@@ -910,6 +960,29 @@ export default function AdminDashboardClient({
                 </select>
               </div>
 
+              {/* Category */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700">Category (वर्ग)</label>
+                <div className="flex gap-2">
+                  {(['Kshetra', 'Prant'] as const).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setNewEmpCategory(cat)}
+                      className={`flex-1 py-2.5 rounded-xl border text-xs font-extrabold transition-all cursor-pointer ${
+                        newEmpCategory === cat
+                          ? cat === 'Prant'
+                            ? 'bg-indigo-700 text-white border-indigo-700'
+                            : 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {cat === 'Prant' ? 'प्रांत (Prant)' : 'क्षेत्र (Kshetra)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="flex items-center gap-3 pt-2">
                 <button type="button" onClick={() => setIsAddEmployeeOpen(false)}
                   className="w-1/2 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 font-bold text-xs uppercase text-slate-500 transition-colors cursor-pointer">
@@ -955,7 +1028,16 @@ export default function AdminDashboardClient({
                       </div>
                       <div>
                         <p className="text-sm font-extrabold text-slate-800">{emp.name}</p>
-                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{emp.role} · {emp.id}</p>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{emp.role} · {emp.id}</p>
+                          <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
+                            (emp.category || 'Kshetra') === 'Prant'
+                              ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                              : 'bg-orange-100 text-orange-700 border border-orange-200'
+                          }`}>
+                            {(emp.category || 'Kshetra') === 'Prant' ? 'प्रांत' : 'क्षेत्र'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -1025,6 +1107,27 @@ export default function AdminDashboardClient({
                   <option>Karyalay Sevak (कार्यालय सेवक)</option>
                   <option>Sahayak (सहायक)</option>
                 </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700">Category (वर्ग)</label>
+                <div className="flex gap-2">
+                  {(['Kshetra', 'Prant'] as const).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setEditCategory(cat)}
+                      className={`flex-1 py-2.5 rounded-xl border text-xs font-extrabold transition-all cursor-pointer ${
+                        editCategory === cat
+                          ? cat === 'Prant'
+                            ? 'bg-indigo-700 text-white border-indigo-700'
+                            : 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {cat === 'Prant' ? 'प्रांत (Prant)' : 'क्षेत्र (Kshetra)'}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="flex items-center gap-3 pt-1">
                 <button type="button" onClick={() => setEditTarget(null)}

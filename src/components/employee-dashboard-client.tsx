@@ -29,12 +29,20 @@ function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: numbe
 }
 
 // ── Bullet Point Input ────────────────────────────────────────────────────────
-function BulletInput({ points, setPoints, inputVal, setInputVal, placeholder, disabled, accent = 'sky' }: {
+function BulletInput({ points, setPoints, inputVal, setInputVal, placeholder, disabled, accent = 'sky', onAddAndSubmit }: {
   points: string[]; setPoints: (p: string[]) => void
   inputVal: string; setInputVal: (v: string) => void
   placeholder: string; disabled: boolean; accent?: 'sky' | 'emerald' | 'amber'
+  onAddAndSubmit?: (updatedPoints: string[]) => void
 }) {
-  const add = () => { const t = inputVal.trim(); if (!t) return; setPoints([...points, t]); setInputVal('') }
+  const add = () => {
+    const t = inputVal.trim()
+    if (!t) return
+    const updated = [...points, t]
+    setPoints(updated)
+    setInputVal('')
+    if (onAddAndSubmit) onAddAndSubmit(updated)
+  }
   const colors = {
     sky:     { btn: 'bg-sky-800 hover:bg-sky-900', dot: 'text-sky-500', ring: 'focus:border-sky-400' },
     emerald: { btn: 'bg-emerald-800 hover:bg-emerald-900', dot: 'text-emerald-500', ring: 'focus:border-emerald-400' },
@@ -49,9 +57,15 @@ function BulletInput({ points, setPoints, inputVal, setInputVal, placeholder, di
             <li key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm group">
               <span className={`${colors.dot} font-black shrink-0 text-base leading-none`}>•</span>
               <span className="flex-1 text-slate-700 font-medium text-xs leading-snug">{p}</span>
-              <button type="button" onClick={() => setPoints(points.filter((_, j) => j !== i))} disabled={disabled}
-                className="text-slate-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 shrink-0">
-                <X className="w-3 h-3" />
+              <button type="button" onClick={() => {
+                const updated = points.filter((_, j) => j !== i)
+                setPoints(updated)
+                if (onAddAndSubmit) onAddAndSubmit(updated)
+              }} disabled={disabled}
+                className="text-slate-400 hover:text-red-500 active:scale-95 transition-all p-1.5 hover:bg-slate-100 rounded-lg shrink-0"
+                title="Remove point"
+              >
+                <X className="w-3.5 h-3.5" />
               </button>
             </li>
           ))}
@@ -214,17 +228,24 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
 
   React.useEffect(() => {
     const check = () => {
-      if (new Date().getHours() >= 18) { setCanSubmit(false); setTimeWarning('Task submission closed at 6:00 PM.') }
+      if (new Date().getHours() >= 22) { setCanSubmit(false); setTimeWarning('Task submission closed at 10:00 PM.') }
       else { setCanSubmit(true); setTimeWarning(null) }
     }
     check(); const t = setInterval(check, 30000); return () => clearInterval(t)
   }, [])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setFeedback(null)
+  const handleSubmit = async (
+    e?: React.FormEvent,
+    upBefore?: string[],
+    upAfter?: string[],
+    upHoliday?: string[],
+    upHoursBefore?: number,
+    upHoursAfter?: number
+  ) => {
+    if (e) e.preventDefault(); setFeedback(null)
 
-    // ── Location check on submit ──────────────────────────────────────────────
-    if (geoEnabled && !locationOk) {
+    // ── Location check on submit (bypassed if submitting Holiday/Leave) ────────
+    if (status !== 'Holiday' && geoEnabled && !locationOk) {
       const locMsg =
         geoStatus === 'checking' ? '⏳ Location is still being verified. Please wait a moment and try again.' :
         geoStatus === 'out_of_range' ? `📍 You are ${distanceM}m away from the office. You must be within ${geoRadius}m to submit.` :
@@ -236,27 +257,33 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
       return
     }
 
+    const currentBefore = upBefore ?? beforePoints
+    const currentAfter = upAfter ?? afterPoints
+    const currentHoliday = upHoliday ?? holidayPoints
+    const currentHoursBefore = upHoursBefore ?? hoursBefore
+    const currentHoursAfter = upHoursAfter ?? hoursAfter
+
     let finalDesc = '', finalHours = 0, descBefore: string | undefined, descAfter: string | undefined, hB: number | undefined, hA: number | undefined
 
     if (status === 'Holiday') {
-      if (!holidayPoints.length) { setFeedback({ type: 'error', message: 'Add at least one leave reason.' }); return }
-      finalDesc = holidayPoints.map(p => `• ${p}`).join('\n')
+      if (!currentHoliday.length) { setFeedback({ type: 'error', message: 'Add at least one leave reason.' }); return }
+      finalDesc = currentHoliday.map(p => `• ${p}`).join('\n')
     } else if (status === 'Full Day') {
-      if (!beforePoints.length) { setFeedback({ type: 'error', message: 'Add at least one Before Lunch task.' }); return }
-      if (!afterPoints.length) { setFeedback({ type: 'error', message: 'Add at least one After Lunch task.' }); return }
-      descBefore = beforePoints.map(p => `• ${p}`).join('\n')
-      descAfter = afterPoints.map(p => `• ${p}`).join('\n')
+      if (!currentBefore.length) { setFeedback({ type: 'error', message: 'Add at least one Before Lunch task.' }); return }
+      if (!currentAfter.length) { setFeedback({ type: 'error', message: 'Add at least one After Lunch task.' }); return }
+      descBefore = currentBefore.map(p => `• ${p}`).join('\n')
+      descAfter = currentAfter.map(p => `• ${p}`).join('\n')
       finalDesc = `[Before Lunch]\n${descBefore}\n[After Lunch]\n${descAfter}`
-      finalHours = hoursBefore + hoursAfter; hB = hoursBefore; hA = hoursAfter
+      finalHours = currentHoursBefore + currentHoursAfter; hB = currentHoursBefore; hA = currentHoursAfter
     } else {
       if (halfDayPeriod === 'Before Lunch') {
-        if (!beforePoints.length) { setFeedback({ type: 'error', message: 'Add at least one Before Lunch task.' }); return }
-        descBefore = beforePoints.map(p => `• ${p}`).join('\n')
-        finalDesc = `[Before Lunch]\n${descBefore}`; finalHours = hoursBefore; hB = hoursBefore
+        if (!currentBefore.length) { setFeedback({ type: 'error', message: 'Add at least one Before Lunch task.' }); return }
+        descBefore = currentBefore.map(p => `• ${p}`).join('\n')
+        finalDesc = `[Before Lunch]\n${descBefore}`; finalHours = currentHoursBefore; hB = currentHoursBefore
       } else {
-        if (!afterPoints.length) { setFeedback({ type: 'error', message: 'Add at least one After Lunch task.' }); return }
-        descAfter = afterPoints.map(p => `• ${p}`).join('\n')
-        finalDesc = `[After Lunch]\n${descAfter}`; finalHours = hoursAfter; hA = hoursAfter
+        if (!currentAfter.length) { setFeedback({ type: 'error', message: 'Add at least one After Lunch task.' }); return }
+        descAfter = currentAfter.map(p => `• ${p}`).join('\n')
+        finalDesc = `[After Lunch]\n${descAfter}`; finalHours = currentHoursAfter; hA = currentHoursAfter
       }
     }
 
@@ -571,7 +598,8 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                       <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/60 flex flex-col gap-3">
                         <span className="text-xs font-extrabold text-amber-900">🏖️ Reason for Leave</span>
                         <BulletInput points={holidayPoints} setPoints={setHolidayPoints} inputVal={holidayInput} setInputVal={setHolidayInput}
-                          placeholder="e.g. Medical leave, family function..." disabled={false} accent="amber" />
+                          placeholder="e.g. Medical leave, family function..." disabled={false} accent="amber"
+                          onAddAndSubmit={updated => handleSubmit(undefined, undefined, undefined, updated)} />
                       </div>
                     )}
 
@@ -582,12 +610,17 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-slate-500">Hours:</span>
                             <input type="number" min={0.5} max={6} step={0.5} value={hoursBefore}
-                              onChange={e => setHoursBefore(parseFloat(e.target.value) || 0)}
+                              onChange={e => {
+                                const val = parseFloat(e.target.value) || 0
+                                setHoursBefore(val)
+                                handleSubmit(undefined, undefined, undefined, undefined, val, undefined)
+                              }}
                               className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-sky-400 bg-white" />
                           </div>
                         </div>
                         <BulletInput points={beforePoints} setPoints={setBeforePoints} inputVal={beforeInput} setInputVal={setBeforeInput}
-                          placeholder="e.g. कार्यालय में पत्र प्राप्त किए..." disabled={false} accent="sky" />
+                          placeholder="e.g. कार्यालय में पत्र प्राप्त किए..." disabled={false} accent="sky"
+                          onAddAndSubmit={updated => handleSubmit(undefined, updated, undefined, undefined)} />
                       </div>
                     )}
 
@@ -598,22 +631,20 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                           <div className="flex items-center gap-1.5">
                             <span className="text-[10px] font-bold text-slate-500">Hours:</span>
                             <input type="number" min={0.5} max={6} step={0.5} value={hoursAfter}
-                              onChange={e => setHoursAfter(parseFloat(e.target.value) || 0)}
+                              onChange={e => {
+                                const val = parseFloat(e.target.value) || 0
+                                setHoursAfter(val)
+                                handleSubmit(undefined, undefined, undefined, undefined, undefined, val)
+                              }}
                               className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-emerald-400 bg-white" />
                           </div>
                         </div>
-                        <BulletInput points={afterPoints} setPoints={setAfterPoints} inputVal={afterInput} setInputVal={setAfterInput}
-                          placeholder="e.g. अनुवर्ती कार्य पूर्ण किए..." disabled={false} accent="emerald" />
+                        <BulletInput points={afterPoints} setPoints={setPoints => setAfterPoints(setPoints)} inputVal={afterInput} setInputVal={setAfterInput}
+                          placeholder="e.g. अनुवर्ती कार्य पूर्ण किए..." disabled={false} accent="emerald"
+                          onAddAndSubmit={updated => handleSubmit(undefined, undefined, updated, undefined)} />
                       </div>
                     )}
 
-                    {/* Submit button */}
-                    <button type="submit" disabled={loading || !canSubmit}
-                      className="w-full py-3 rounded-2xl bg-[#0c1a2e] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-widest shadow-md hover:shadow-lg transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2">
-                      {loading
-                        ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving...</>
-                        : todayLog ? '✏️  Update Log Entry' : '✅  Submit Log Entry'}
-                    </button>
                   </form>
                 </div>
               </div>

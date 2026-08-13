@@ -8,6 +8,7 @@ export interface Employee {
   id: string
   name: string
   role: string
+  category?: string   // 'Prant' | 'Kshetra'
   passwordHash: string // simple cleartext for mock, or md5/sha
 }
 

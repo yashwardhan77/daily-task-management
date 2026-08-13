@@ -30,6 +30,7 @@ export async function getEmployeeSession(): Promise<Employee | null> {
     id: data.id,
     name: data.name,
     role: data.role,
+    category: data.category || 'Kshetra',
     passwordHash: data.password
   }
 }
@@ -138,10 +139,10 @@ export async function submitTaskAction(
     return { success: false, message: "You can only submit or edit task logs for today's date (" + todayIstStr + ")." }
   }
 
-  // Enforce the 6:00 PM (18:00) deadline
+  // Enforce the 10:00 PM (22:00) deadline
   const hoursIst = istTime.getHours()
-  if (hoursIst >= 18) {
-    return { success: false, message: 'Task submission and editing closed at 6:00 PM IST.' }
+  if (hoursIst >= 22) {
+    return { success: false, message: 'Task submission and editing closed at 10:00 PM IST.' }
   }
 
   // Check if log already exists in Supabase
@@ -306,6 +307,7 @@ export async function getAdminLogsAction(dateFilter?: string): Promise<{
         submittedAt: task.submitted_at,
         employeeName: emp.name,
         employeeRole: emp.role,
+        employeeCategory: emp.category || 'Kshetra',
       }
     } else {
       pending++
@@ -319,6 +321,7 @@ export async function getAdminLogsAction(dateFilter?: string): Promise<{
         submittedAt: '',
         employeeName: emp.name,
         employeeRole: emp.role,
+        employeeCategory: emp.category || 'Kshetra',
       }
     }
   })
@@ -386,7 +389,8 @@ export async function addEmployeeAction(
   id: string,
   name: string,
   passwordHash: string,
-  role: string
+  role: string,
+  category: string = 'Kshetra'
 ): Promise<{ success: boolean; message: string }> {
   const isAdmin = await getAdminSession()
   if (!isAdmin) {
@@ -415,7 +419,8 @@ export async function addEmployeeAction(
       id: id.toUpperCase(),
       name,
       password: passwordHash,
-      role
+      role,
+      category: category || 'Kshetra'
     })
 
   if (error) {
@@ -431,14 +436,14 @@ export async function addEmployeeAction(
  */
 export async function getEmployeesAction(): Promise<{
   success: boolean
-  employees: { id: string; name: string; role: string; password: string }[]
+  employees: { id: string; name: string; role: string; password: string; category: string }[]
 }> {
   const isAdmin = await getAdminSession()
   if (!isAdmin) return { success: false, employees: [] }
 
   const { data, error } = await supabase
     .from('employees')
-    .select('id, name, role, password')
+    .select('id, name, role, password, category')
     .order('id', { ascending: true })
 
   if (error || !data) {
@@ -446,7 +451,10 @@ export async function getEmployeesAction(): Promise<{
     return { success: false, employees: [] }
   }
 
-  return { success: true, employees: data }
+  return {
+    success: true,
+    employees: data.map((e) => ({ ...e, category: e.category || 'Kshetra' }))
+  }
 }
 
 /**
@@ -456,7 +464,8 @@ export async function editEmployeeAction(
   id: string,
   name: string,
   passwordHash: string,
-  role: string
+  role: string,
+  category: string = 'Kshetra'
 ): Promise<{ success: boolean; message: string }> {
   const isAdmin = await getAdminSession()
   if (!isAdmin) {
@@ -469,7 +478,7 @@ export async function editEmployeeAction(
 
   const { error } = await supabase
     .from('employees')
-    .update({ name, password: passwordHash, role })
+    .update({ name, password: passwordHash, role, category: category || 'Kshetra' })
     .eq('id', id.toUpperCase())
 
   if (error) {
