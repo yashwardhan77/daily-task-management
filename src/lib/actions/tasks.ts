@@ -184,6 +184,33 @@ export async function submitTaskAction(
 }
 
 /**
+ * Delete task log for a specific date (current employee)
+ */
+export async function deleteTodayTaskAction(date: string): Promise<{ success: boolean; message: string }> {
+  const emp = await getEmployeeSession()
+  if (!emp) {
+    return { success: false, message: 'Unauthorized session. Please login again.' }
+  }
+
+  if (!date) {
+    return { success: false, message: 'Invalid date.' }
+  }
+
+  const { error } = await supabase
+    .from('task_logs')
+    .delete()
+    .eq('employee_id', emp.id)
+    .eq('date', date)
+
+  if (error) {
+    console.error('Supabase delete task log error:', error)
+    return { success: false, message: 'Failed to delete task log from database.' }
+  }
+
+  return { success: true, message: 'Task log deleted successfully.' }
+}
+
+/**
  * Fetch logs for current logged-in employee
  */
 export async function getEmployeeLogsAction(): Promise<{ success: boolean; data: TaskLog[] }> {

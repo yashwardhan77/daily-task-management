@@ -3,13 +3,13 @@
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Logo from '@/components/logo'
-import { submitTaskAction, logoutAction, getEmployeeLogsAction, getGeoSettingsAction } from '@/lib/actions/tasks'
+import { submitTaskAction, logoutAction, getEmployeeLogsAction, getGeoSettingsAction, deleteTodayTaskAction } from '@/lib/actions/tasks'
 import { Employee, TaskLog } from '@/lib/actions/mockDb'
 import {
   Clock, ClipboardList, LogOut, CheckCircle, AlertCircle,
   Check, LayoutDashboard, ChevronLeft, ChevronRight, Menu,
   CalendarDays, Plus, X, ListChecks, Sun, Sunset,
-  MapPin, MapPinOff, Navigation, RefreshCw, ShieldCheck, LocateFixed
+  MapPin, MapPinOff, Navigation, RefreshCw, ShieldCheck, LocateFixed, Trash2
 } from 'lucide-react'
 
 interface EmployeeDashboardClientProps {
@@ -158,7 +158,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
   const [status, setStatus] = useState<'Full Day' | 'Half Day' | 'Holiday'>(() =>
     (todayLog?.status === 'Full Day' || todayLog?.status === 'Half Day' || todayLog?.status === 'Holiday') ? todayLog.status : 'Full Day'
   )
-  const [halfDayPeriod, setHalfDayPeriod] = useState<'Before Lunch' | 'After Lunch'>('Before Lunch')
   const [hoursBefore, setHoursBefore] = useState(() => todayLog?.hoursBefore ?? 4)
   const [hoursAfter, setHoursAfter] = useState(() => todayLog?.hoursAfter ?? 4)
 
@@ -264,38 +263,115 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
     const currentHoursAfter = upHoursAfter ?? hoursAfter
 
     let finalDesc = '', finalHours = 0, descBefore: string | undefined, descAfter: string | undefined, hB: number | undefined, hA: number | undefined
+    let statusToSend: 'Full Day' | 'Half Day' | 'Holiday' = status
 
     if (status === 'Holiday') {
-      if (!currentHoliday.length) { setFeedback({ type: 'error', message: 'Add at least one leave reason.' }); return }
-      finalDesc = currentHoliday.map(p => `• ${p}`).join('\n')
-    } else if (status === 'Full Day') {
-      if (!currentBefore.length) { setFeedback({ type: 'error', message: 'Add at least one Before Lunch task.' }); return }
-      if (!currentAfter.length) { setFeedback({ type: 'error', message: 'Add at least one After Lunch task.' }); return }
-      descBefore = currentBefore.map(p => `• ${p}`).join('\n')
-      descAfter = currentAfter.map(p => `• ${p}`).join('\n')
-      finalDesc = `[Before Lunch]\n${descBefore}\n[After Lunch]\n${descAfter}`
-      finalHours = currentHoursBefore + currentHoursAfter; hB = currentHoursBefore; hA = currentHoursAfter
-    } else {
-      if (halfDayPeriod === 'Before Lunch') {
-        if (!currentBefore.length) { setFeedback({ type: 'error', message: 'Add at least one Before Lunch task.' }); return }
-        descBefore = currentBefore.map(p => `• ${p}`).join('\n')
-        finalDesc = `[Before Lunch]\n${descBefore}`; finalHours = currentHoursBefore; hB = currentHoursBefore
-      } else {
-        if (!currentAfter.length) { setFeedback({ type: 'error', message: 'Add at least one After Lunch task.' }); return }
-        descAfter = currentAfter.map(p => `• ${p}`).join('\n')
-        finalDesc = `[After Lunch]\n${descAfter}`; finalHours = currentHoursAfter; hA = currentHoursAfter
+      if (!currentHoliday.length) {
+        // If all leave points are removed -> automatically delete today's entry from DB
+        setLoading(true)
+        try {
+          const res = await deleteTodayTaskAction(todayStr)
+          if (res.success) {
+            setFeedback({ type: 'success', message: 'Leave entry removed.' })
+            const r = await getEmployeeLogsAction(); if (r.success) setLogs(r.data)
+          } else {
+            setFeedback({ type: 'error', message: res.message })
+          }
+        } catch {
+          setFeedback({ type: 'error', message: 'Failed to delete entry.' })
+        } finally {
+          setLoading(false)
+        }
+        return
       }
+      finalDesc = currentHoliday.map(p => `• ${p}`).join('\n')
+      statusToSend = 'Holiday'
+      finalHours = 0
+    } else {
+      const hasBefore = currentBefore.length > 0
+      const hasAfter = currentAfter.length > 0
+
+      if (!hasBefore && !hasAfter) {
+        // If all tasks are removed -> automatically delete today's task log from DB
+        setLoading(true)
+        try {
+          const res = await deleteTodayTaskAction(todayStr)
+          if (res.success) {
+            setFeedback({ type: 'success', message: 'All tasks removed. Task entry deleted.' })
+            const r = await getEmployeeLogsAction(); if (r.success) setLogs(r.data)
+          } else {
+            setFeedback({ type: 'error', message: res.message })
+          }
+        } catch {
+          setFeedback({ type: 'error', message: 'Failed to delete task log.' })
+        } finally {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (hasBefore && hasAfter) {
+        // Both Before Lunch and After Lunch filled -> Automatically Full Day
+        statusToSend = 'Full Day'
+        descBefore = currentBefore.map(p => `• ${p}`).join('\n')
+        descAfter = currentAfter.map(p => `• ${p}`).join('\n')
+        finalDesc = `[Before Lunch]\n${descBefore}\n[After Lunch]\n${descAfter}`
+        finalHours = currentHoursBefore + currentHoursAfter
+        hB = currentHoursBefore
+        hA = currentHoursAfter
+      } else if (hasBefore && !hasAfter) {
+        // Only Before Lunch filled -> Automatically Half Day
+        statusToSend = 'Half Day'
+        descBefore = currentBefore.map(p => `• ${p}`).join('\n')
+        finalDesc = `[Before Lunch]\n${descBefore}`
+        finalHours = currentHoursBefore
+        hB = currentHoursBefore
+        hA = undefined
+      } else if (!hasBefore && hasAfter) {
+        // Only After Lunch filled -> Automatically Half Day
+        statusToSend = 'Half Day'
+        descAfter = currentAfter.map(p => `• ${p}`).join('\n')
+        finalDesc = `[After Lunch]\n${descAfter}`
+        finalHours = currentHoursAfter
+        hB = undefined
+        hA = currentHoursAfter
+      }
+
+      // Update UI status selection to match what was saved
+      setStatus(statusToSend)
     }
 
     setLoading(true)
     try {
-      const res = await submitTaskAction(todayStr, status, finalDesc, finalHours, descBefore, descAfter, hB, hA)
+      const res = await submitTaskAction(todayStr, statusToSend, finalDesc, finalHours, descBefore, descAfter, hB, hA)
       if (res.success) {
         setFeedback({ type: 'success', message: res.message })
         const r = await getEmployeeLogsAction(); if (r.success) setLogs(r.data)
       } else setFeedback({ type: 'error', message: res.message })
     } catch { setFeedback({ type: 'error', message: 'Something went wrong.' }) }
     finally { setLoading(false) }
+  }
+
+  const handleDeleteTodayLog = async () => {
+    if (!confirm("Are you sure you want to clear and delete today's task log?")) return
+    setLoading(true)
+    try {
+      const res = await deleteTodayTaskAction(todayStr)
+      if (res.success) {
+        setBeforePoints([])
+        setAfterPoints([])
+        setHolidayPoints([])
+        setFeedback({ type: 'success', message: "Today's task entry deleted successfully." })
+        const r = await getEmployeeLogsAction()
+        if (r.success) setLogs(r.data)
+      } else {
+        setFeedback({ type: 'error', message: res.message })
+      }
+    } catch {
+      setFeedback({ type: 'error', message: 'Failed to delete task.' })
+    } finally {
+      setLoading(false)
+    }
   }
 
   const empInitials = employee.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -539,9 +615,22 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                       <ListChecks className="w-4 h-4 text-sky-600" />
                       <h3 className="font-bold text-slate-800 text-sm">Daily Task Entry</h3>
                     </div>
-                    <span className="text-[10px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">
-                      {new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {(todayLog || beforePoints.length > 0 || afterPoints.length > 0 || holidayPoints.length > 0) && (
+                        <button
+                          type="button"
+                          onClick={handleDeleteTodayLog}
+                          disabled={loading || !canSubmit}
+                          className="text-[10px] font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg border border-red-200 transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          title="Clear/delete today's log"
+                        >
+                          <Trash2 className="w-3 h-3" /> Clear Log
+                        </button>
+                      )}
+                      <span className="text-[10px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">
+                        {new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
                   </div>
 
                   {timeWarning && (
@@ -560,7 +649,15 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                   <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     {/* Status */}
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Work Status</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Work Status</label>
+                        {status !== 'Holiday' && (
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {beforePoints.length > 0 && afterPoints.length > 0 ? '✨ Full Day (Both sessions filled)' :
+                             beforePoints.length > 0 || afterPoints.length > 0 ? '✨ Half Day (1 session filled)' : 'Fill tasks below'}
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-3 gap-2">
                         {([
                           { val: 'Full Day' as const, emoji: '✅', color: 'emerald' },
@@ -582,18 +679,6 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                       </div>
                     </div>
 
-                    {status === 'Half Day' && (
-                      <div className="flex gap-2">
-                        {(['Before Lunch', 'After Lunch'] as const).map(p => (
-                          <button key={p} type="button" onClick={() => setHalfDayPeriod(p)}
-                            className={`flex-1 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                              halfDayPeriod === p ? 'border-sky-400 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-500'}`}>
-                            {p === 'Before Lunch' ? <Sun className="w-3.5 h-3.5" /> : <Sunset className="w-3.5 h-3.5" />} {p}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
                     {status === 'Holiday' && (
                       <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/60 flex flex-col gap-3">
                         <span className="text-xs font-extrabold text-amber-900">🏖️ Reason for Leave</span>
@@ -603,46 +688,48 @@ export default function EmployeeDashboardClient({ employee, initialLogs }: Emplo
                       </div>
                     )}
 
-                    {status !== 'Holiday' && (status === 'Full Day' || (status === 'Half Day' && halfDayPeriod === 'Before Lunch')) && (
-                      <div className="p-4 bg-sky-50/50 rounded-2xl border border-sky-200/60 flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-extrabold text-sky-900 flex items-center gap-1.5"><Sun className="w-3.5 h-3.5" /> Before Lunch</span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-slate-500">Hours:</span>
-                            <input type="number" min={0.5} max={6} step={0.5} value={hoursBefore}
-                              onChange={e => {
-                                const val = parseFloat(e.target.value) || 0
-                                setHoursBefore(val)
-                                handleSubmit(undefined, undefined, undefined, undefined, val, undefined)
-                              }}
-                              className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-sky-400 bg-white" />
+                    {status !== 'Holiday' && (
+                      <>
+                        {/* Before Lunch Section */}
+                        <div className="p-4 bg-sky-50/50 rounded-2xl border border-sky-200/60 flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-sky-900 flex items-center gap-1.5"><Sun className="w-3.5 h-3.5" /> Before Lunch (सुबह का सत्र)</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-slate-500">Hours:</span>
+                              <input type="number" min={0.5} max={6} step={0.5} value={hoursBefore}
+                                onChange={e => {
+                                  const val = parseFloat(e.target.value) || 0
+                                  setHoursBefore(val)
+                                  handleSubmit(undefined, undefined, undefined, undefined, val, undefined)
+                                }}
+                                className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-sky-400 bg-white" />
+                            </div>
                           </div>
+                          <BulletInput points={beforePoints} setPoints={setBeforePoints} inputVal={beforeInput} setInputVal={setBeforeInput}
+                            placeholder="e.g. कार्यालय में पत्र प्राप्त किए..." disabled={false} accent="sky"
+                            onAddAndSubmit={updated => handleSubmit(undefined, updated, undefined, undefined)} />
                         </div>
-                        <BulletInput points={beforePoints} setPoints={setBeforePoints} inputVal={beforeInput} setInputVal={setBeforeInput}
-                          placeholder="e.g. कार्यालय में पत्र प्राप्त किए..." disabled={false} accent="sky"
-                          onAddAndSubmit={updated => handleSubmit(undefined, updated, undefined, undefined)} />
-                      </div>
-                    )}
 
-                    {status !== 'Holiday' && (status === 'Full Day' || (status === 'Half Day' && halfDayPeriod === 'After Lunch')) && (
-                      <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200/60 flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-extrabold text-emerald-900 flex items-center gap-1.5"><Sunset className="w-3.5 h-3.5" /> After Lunch</span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] font-bold text-slate-500">Hours:</span>
-                            <input type="number" min={0.5} max={6} step={0.5} value={hoursAfter}
-                              onChange={e => {
-                                const val = parseFloat(e.target.value) || 0
-                                setHoursAfter(val)
-                                handleSubmit(undefined, undefined, undefined, undefined, undefined, val)
-                              }}
-                              className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-emerald-400 bg-white" />
+                        {/* After Lunch Section */}
+                        <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-200/60 flex flex-col gap-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-extrabold text-emerald-900 flex items-center gap-1.5"><Sunset className="w-3.5 h-3.5" /> After Lunch (दोपहर बाद का सत्र)</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-slate-500">Hours:</span>
+                              <input type="number" min={0.5} max={6} step={0.5} value={hoursAfter}
+                                onChange={e => {
+                                  const val = parseFloat(e.target.value) || 0
+                                  setHoursAfter(val)
+                                  handleSubmit(undefined, undefined, undefined, undefined, undefined, val)
+                                }}
+                                className="w-14 px-2 py-1 border border-slate-200 rounded-lg text-xs font-bold text-center focus:outline-none focus:border-emerald-400 bg-white" />
+                            </div>
                           </div>
+                          <BulletInput points={afterPoints} setPoints={setAfterPoints} inputVal={afterInput} setInputVal={setAfterInput}
+                            placeholder="e.g. अनुवर्ती कार्य पूर्ण किए..." disabled={false} accent="emerald"
+                            onAddAndSubmit={updated => handleSubmit(undefined, undefined, updated, undefined)} />
                         </div>
-                        <BulletInput points={afterPoints} setPoints={setPoints => setAfterPoints(setPoints)} inputVal={afterInput} setInputVal={setAfterInput}
-                          placeholder="e.g. अनुवर्ती कार्य पूर्ण किए..." disabled={false} accent="emerald"
-                          onAddAndSubmit={updated => handleSubmit(undefined, undefined, updated, undefined)} />
-                      </div>
+                      </>
                     )}
 
                   </form>
