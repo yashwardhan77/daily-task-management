@@ -41,7 +41,13 @@ import {
   MapPin,
   Navigation,
   ToggleLeft,
-  ToggleRight
+  ToggleRight,
+  Share2,
+  Printer,
+  Copy,
+  Check,
+  MessageCircle,
+  Send
 } from 'lucide-react'
 
 interface LogWithEmpDetails extends TaskLog {
@@ -116,6 +122,9 @@ export default function AdminDashboardClient({
   const [selectedLog, setSelectedLog] = useState<LogWithEmpDetails | null>(null)
   
   const [exporting, setExporting] = useState(false)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [shareTab, setShareTab] = useState<'visual' | 'text'>('visual')
 
   // Add Employee form states
   const [isAddEmployeeOpen, setIsAddEmployeeOpen] = useState(false)
@@ -361,6 +370,212 @@ export default function AdminDashboardClient({
 
   const completionRate = stats.total > 0 ? Math.round(((stats.total - stats.pending) / stats.total) * 100) : 0
 
+  const submittedLogs = logs.filter((l) => l.status !== 'Pending')
+  const pendingLogs = logs.filter((l) => l.status === 'Pending')
+
+  const generateTextSummary = () => {
+    let text = `📊 *विद्या भारती सेवाधाम - दैनिक कार्य प्रगति सारांश*\n`
+    text += `📅 *दिनांक:* ${displayDateStr}\n`
+    text += `────────────────────────\n`
+    text += `👥 कुल कर्मचारी: ${stats.total}\n`
+    text += `✅ पूर्ण दिवस (Full Day): ${stats.present}\n`
+    text += `🌤️ अर्ध दिवस (Half Day): ${stats.halfday}\n`
+    text += `🏖️ अवकाश (Leave/Holiday): ${stats.holiday}\n`
+    text += `❌ अपूर्ण / शेष (Pending): ${stats.pending}\n`
+    text += `📈 प्रगति दर: ${completionRate}%\n`
+    text += `────────────────────────\n\n`
+
+    if (submittedLogs.length > 0) {
+      text += `✅ *कार्य दर्ज करने वाले कर्मचारी (${submittedLogs.length}):*\n`
+      submittedLogs.forEach((log, idx) => {
+        const cat = log.employeeCategory ? ` [${log.employeeCategory}]` : ''
+        text += `${idx + 1}. *${log.employeeName}* (${log.employeeId}${cat})\n`
+        text += `   • स्थिति: ${log.status} (${log.status === 'Holiday' ? '0h' : log.hours + 'h'})\n`
+        if (log.description) {
+          const cleanDesc = log.description.split('\n').map(s => s.replace(/^[•\-\*]\s*/, '').trim()).filter(Boolean).join('; ')
+          text += `   • कार्य: ${cleanDesc.length > 120 ? cleanDesc.slice(0, 120) + '...' : cleanDesc}\n`
+        }
+      })
+      text += `\n`
+    }
+
+    if (pendingLogs.length > 0) {
+      text += `⚠️ *कार्य दर्ज नहीं करने वाले (Pending - ${pendingLogs.length}):*\n`
+      pendingLogs.forEach((log, idx) => {
+        const cat = log.employeeCategory ? ` [${log.employeeCategory}]` : ''
+        text += `${idx + 1}. ${log.employeeName} (${log.employeeId}${cat}) - ${log.employeeRole}\n`
+      })
+      text += `\n`
+    }
+
+    text += `────────────────────────\n`
+    text += `_रिपोर्ट जनरेटेड: ${new Date().toLocaleDateString('en-IN')} | ${new Date().toLocaleTimeString('en-IN')}_`
+    return text
+  }
+
+  const handleCopySummary = () => {
+    const text = generateTextSummary()
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleWhatsAppShare = () => {
+    const text = generateTextSummary()
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`
+    window.open(url, '_blank')
+  }
+
+  const handlePrintReport = () => {
+    const submittedRows = submittedLogs.map((log, i) => `
+      <tr>
+        <td style="text-align: center; font-weight: bold; width: 25px;">${i + 1}</td>
+        <td style="width: 160px;">
+          <strong>${log.employeeName}</strong>
+          <div style="color: #64748b; font-size: 9.5px; margin-top: 2px;">ID: ${log.employeeId} | ${log.employeeRole}</div>
+        </td>
+        <td style="width: 60px; font-weight: bold; color: ${log.employeeCategory === 'Prant' ? '#4338ca' : '#c2410c'};">${log.employeeCategory || 'Kshetra'}</td>
+        <td style="width: 75px;"><span class="badge ${log.status === 'Full Day' ? 'badge-full' : log.status === 'Half Day' ? 'badge-half' : 'badge-leave'}">${log.status}</span></td>
+        <td style="text-align: center; font-weight: bold; width: 40px;">${log.status === 'Holiday' ? '0h' : log.hours + 'h'}</td>
+        <td style="font-size: 10px; line-height: 1.4; color: #334155;">${(log.description || '-').replace(/\n/g, '<br/>')}</td>
+      </tr>
+    `).join('')
+
+    const pendingRows = pendingLogs.map((log, i) => `
+      <tr>
+        <td style="text-align: center; font-weight: bold; color: #dc2626; width: 25px;">${i + 1}</td>
+        <td style="width: 180px;">
+          <strong>${log.employeeName}</strong>
+          <div style="color: #64748b; font-size: 9.5px;">ID: ${log.employeeId}</div>
+        </td>
+        <td style="width: 65px; font-weight: bold; color: ${log.employeeCategory === 'Prant' ? '#4338ca' : '#c2410c'};">${log.employeeCategory || 'Kshetra'}</td>
+        <td style="color: #475569;">${log.employeeRole}</td>
+        <td style="width: 130px;"><span class="badge badge-pending">❌ कार्य दर्ज नहीं किया</span></td>
+      </tr>
+    `).join('')
+
+    const printHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>दैनिक कार्य प्रगति रिपोर्ट - ${selectedDate}</title>
+          <style>
+            @page { size: A4; margin: 12mm; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 10px; font-size: 11px; }
+            .header { text-align: center; border-bottom: 2px solid #064e3b; padding-bottom: 10px; margin-bottom: 15px; }
+            .header h1 { margin: 0; font-size: 19px; color: #064e3b; }
+            .header h2 { margin: 3px 0; font-size: 12px; color: #b45309; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; }
+            .header p { margin: 3px 0 0 0; font-size: 11px; color: #475569; font-weight: 600; }
+            .stats-grid { display: flex; gap: 8px; margin-bottom: 15px; }
+            .stat-card { flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; text-align: center; background: #f8fafc; }
+            .stat-num { font-size: 16px; font-weight: 900; margin: 2px 0; color: #0f172a; }
+            .stat-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; color: #64748b; }
+            .section-head { font-size: 12px; font-weight: 800; margin: 14px 0 6px 0; padding: 4px 8px; background: #f1f5f9; border-left: 4px solid #064e3b; border-radius: 4px; display: flex; justify-content: space-between; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 10.5px; }
+            th { background: #064e3b; color: #ffffff; text-align: left; padding: 5px 6px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+            td { border-bottom: 1px solid #e2e8f0; padding: 5px 6px; vertical-align: top; }
+            tr:nth-child(even) { background: #f8fafc; }
+            .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; text-align: center; }
+            .badge-full { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+            .badge-half { background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }
+            .badge-leave { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+            .badge-pending { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+            .footer { margin-top: 25px; border-top: 1px solid #cbd5e1; padding-top: 8px; display: flex; justify-content: space-between; font-size: 9px; color: #64748b; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>विद्या भारती सेवाधाम</h1>
+            <h2>दैनिक कार्य प्रगति सारांश रिपोर्ट</h2>
+            <p>दिनांक: ${displayDateStr}</p>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card" style="border-top: 3px solid #0f172a;">
+              <div class="stat-lbl">कुल कर्मचारी</div>
+              <div class="stat-num">${stats.total}</div>
+            </div>
+            <div class="stat-card" style="border-top: 3px solid #16a34a;">
+              <div class="stat-lbl">Full Day (पूर्ण)</div>
+              <div class="stat-num" style="color: #16a34a;">${stats.present}</div>
+            </div>
+            <div class="stat-card" style="border-top: 3px solid #0284c7;">
+              <div class="stat-lbl">Half Day (अर्ध)</div>
+              <div class="stat-num" style="color: #0284c7;">${stats.halfday}</div>
+            </div>
+            <div class="stat-card" style="border-top: 3px solid #d97706;">
+              <div class="stat-lbl">अवकाश (Leave)</div>
+              <div class="stat-num" style="color: #d97706;">${stats.holiday}</div>
+            </div>
+            <div class="stat-card" style="border-top: 3px solid #dc2626;">
+              <div class="stat-lbl">अपूर्ण (Pending)</div>
+              <div class="stat-num" style="color: #dc2626;">${stats.pending}</div>
+            </div>
+            <div class="stat-card" style="border-top: 3px solid #6366f1;">
+              <div class="stat-lbl">प्रगति दर</div>
+              <div class="stat-num" style="color: #4338ca;">${completionRate}%</div>
+            </div>
+          </div>
+
+          <div class="section-head">
+            <span>✅ कार्य दर्ज करने वाले कर्मचारी (${submittedLogs.length})</span>
+            <span style="font-size: 10px; color: #475569;">उपस्थिति विवरण</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 25px; text-align: center;">क्र.</th>
+                <th style="width: 160px;">कर्मचारी / पद</th>
+                <th style="width: 60px;">वर्ग</th>
+                <th style="width: 75px;">स्थिति</th>
+                <th style="width: 40px; text-align: center;">घंटे</th>
+                <th>कार्य विवरण</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${submittedRows || '<tr><td colspan="6" style="text-align:center; color:#64748b; padding: 12px;">किसी कर्मचारी ने कार्य दर्ज नहीं किया है।</td></tr>'}
+            </tbody>
+          </table>
+
+          <div class="section-head" style="border-left-color: #dc2626;">
+            <span style="color: #991b1b;">❌ कार्य दर्ज नहीं करने वाले कर्मचारी (${pendingLogs.length})</span>
+            <span style="font-size: 10px; color: #991b1b;">अपूर्ण प्रविष्टि</span>
+          </div>
+          <table>
+            <thead>
+              <tr style="background: #991b1b;">
+                <th style="width: 25px; text-align: center; background: #991b1b;">क्र.</th>
+                <th style="width: 180px; background: #991b1b;">कर्मचारी नाम / ID</th>
+                <th style="width: 65px; background: #991b1b;">वर्ग</th>
+                <th style="background: #991b1b;">पद (Designation)</th>
+                <th style="width: 130px; background: #991b1b;">स्थिति</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pendingRows || '<tr><td colspan="5" style="text-align:center; color:#16a34a; font-weight:bold; padding: 12px;">🎉 सभी कर्मचारियों ने कार्य दर्ज कर दिया है!</td></tr>'}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <span>विद्या भारती सेवाधाम प्रबंधन पोर्टल</span>
+            <span>रिपोर्ट दिनांक व समय: ${new Date().toLocaleString('en-IN')}</span>
+          </div>
+        </body>
+      </html>
+    `
+
+    const win = window.open('', '_blank')
+    if (win) {
+      win.document.write(printHtml)
+      win.document.close()
+      win.focus()
+      setTimeout(() => {
+        win.print()
+      }, 350)
+    }
+  }
+
   // On large screens sidebar is always visible; on mobile, show/hide via JS state
 
   return (
@@ -461,6 +676,19 @@ export default function AdminDashboardClient({
           </button>
 
           <button
+            onClick={() => {
+              setIsShareModalOpen(true)
+              setMobileSidebarOpen(false)
+            }}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 transition-all text-left cursor-pointer w-full ${sidebarCollapsed ? 'justify-center' : ''}`}
+          >
+            <Share2 className="w-4.5 h-4.5 text-amber-400 shrink-0" />
+            {!sidebarCollapsed && (
+              <span className="text-xs font-bold text-amber-300">Share Summary (PDF)</span>
+            )}
+          </button>
+
+          <button
             onClick={handleExcelExport}
             disabled={exporting}
             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-left cursor-pointer w-full disabled:opacity-50 ${sidebarCollapsed ? 'justify-center' : ''}`}
@@ -538,13 +766,25 @@ export default function AdminDashboardClient({
               </div>
             </div>
 
-            {/* Completion badge */}
-            <div className="hidden sm:flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2">
-              <TrendingUp className="w-4 h-4 text-emerald-600" />
-              <span className="text-xs font-black text-emerald-800">
-                {stats.total - stats.pending} / {stats.total} Submitted
-              </span>
-              <span className="text-xs font-bold text-emerald-600">({completionRate}%)</span>
+            {/* Action buttons & Completion badge */}
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => setIsShareModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-900 hover:bg-emerald-950 text-white text-xs font-bold shadow-sm transition-all cursor-pointer hover:shadow-md active:scale-95"
+                title="Share & Print Summary Report"
+              >
+                <Share2 className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Share Summary</span>
+                <span className="sm:hidden">Share</span>
+              </button>
+
+              <div className="hidden sm:flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2">
+                <TrendingUp className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-black text-emerald-800">
+                  {stats.total - stats.pending} / {stats.total} Submitted
+                </span>
+                <span className="text-xs font-bold text-emerald-600">({completionRate}%)</span>
+              </div>
             </div>
           </div>
         </header>
@@ -1449,6 +1689,312 @@ export default function AdminDashboardClient({
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Share & Summary Report Modal ── */}
+      {isShareModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={() => setIsShareModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden border border-slate-200 animate-fade-in-up max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header Banner */}
+            <div className="bg-gradient-to-r from-emerald-900 via-emerald-850 to-teal-900 p-5 sm:p-6 text-white relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsShareModalOpen(false)}
+                className="absolute top-4 right-4 text-white/70 hover:text-white p-1.5 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-amber-400 shrink-0">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black text-amber-300 uppercase tracking-widest block">
+                    विद्या भारती सेवाधाम • रिपोर्ट सारांश
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white leading-tight">
+                    दैनिक कार्य प्रगति सारांश (Daily Summary)
+                  </h3>
+                  <p className="text-xs text-emerald-200 mt-0.5 font-medium">
+                    📅 {displayDateStr}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Bar (Top) */}
+            <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 shrink-0">
+              {/* Tab Selector */}
+              <div className="flex items-center bg-slate-200/80 p-1 rounded-xl text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setShareTab('visual')}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    shareTab === 'visual'
+                      ? 'bg-white text-slate-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  📊 सारांश दृश्य (Visual)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShareTab('text')}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    shareTab === 'text'
+                      ? 'bg-white text-slate-800 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  📝 टेक्स्ट प्रारूप (Text/WhatsApp)
+                </button>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintReport}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold transition-all shadow-xs cursor-pointer hover:shadow-md active:scale-95"
+                  title="Print or Save as PDF"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>PDF / Print</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleWhatsAppShare}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer hover:shadow-md active:scale-95"
+                  title="Share directly to WhatsApp"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopySummary}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                    copied
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                  }`}
+                  title="Copy full text summary to clipboard"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+                  <span>{copied ? 'Copied!' : 'Copy'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Content Body */}
+            <div className="p-5 overflow-y-auto flex-1 flex flex-col gap-5">
+              {shareTab === 'visual' ? (
+                <>
+                  {/* Overview Stats Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">कुल स्टाफ</span>
+                      <p className="text-xl font-black text-slate-800 mt-0.5">{stats.total}</p>
+                    </div>
+                    <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold text-emerald-700 uppercase">Full Day</span>
+                      <p className="text-xl font-black text-emerald-700 mt-0.5">{stats.present}</p>
+                    </div>
+                    <div className="bg-sky-50/70 border border-sky-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold text-sky-700 uppercase">Half Day</span>
+                      <p className="text-xl font-black text-sky-700 mt-0.5">{stats.halfday}</p>
+                    </div>
+                    <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold text-amber-700 uppercase">अवकाश</span>
+                      <p className="text-xl font-black text-amber-700 mt-0.5">{stats.holiday}</p>
+                    </div>
+                    <div className="bg-red-50/70 border border-red-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold text-red-700 uppercase">कार्य नहीं भरा</span>
+                      <p className="text-xl font-black text-red-700 mt-0.5">{stats.pending}</p>
+                    </div>
+                    <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-3 text-center">
+                      <span className="text-[10px] font-bold text-indigo-700 uppercase">प्रगति दर</span>
+                      <p className="text-xl font-black text-indigo-700 mt-0.5">{completionRate}%</p>
+                    </div>
+                  </div>
+
+                  {/* Section 1: Submitted Employees */}
+                  <div className="flex flex-col gap-2.5">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <h4 className="text-sm font-extrabold text-emerald-900 flex items-center gap-1.5">
+                        <UserCheck className="w-4 h-4 text-emerald-600" />
+                        <span>कार्य दर्ज करने वाले कर्मचारी ({submittedLogs.length})</span>
+                      </h4>
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                        {submittedLogs.length} Submitted
+                      </span>
+                    </div>
+
+                    {submittedLogs.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic py-2 text-center">
+                        इस दिनांक को किसी भी कर्मचारी ने कार्य दर्ज नहीं किया है।
+                      </p>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {submittedLogs.map((log) => {
+                          const statusColor =
+                            log.status === 'Full Day'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              : log.status === 'Half Day'
+                              ? 'bg-sky-100 text-sky-800 border-sky-200'
+                              : 'bg-amber-100 text-amber-800 border-amber-200'
+
+                          return (
+                            <div
+                              key={log.id}
+                              className="p-3.5 bg-slate-50/70 hover:bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors"
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-emerald-800 text-white font-black text-xs flex items-center justify-center shrink-0">
+                                  {log.employeeName.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                                      {log.employeeName}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-semibold font-mono">
+                                      ({log.employeeId})
+                                    </span>
+                                    {log.employeeCategory && (
+                                      <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${
+                                        log.employeeCategory === 'Prant' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-orange-50 text-orange-700 border-orange-200'
+                                      }`}>
+                                        {log.employeeCategory}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 font-medium truncate max-w-md">
+                                    {log.employeeRole}
+                                  </p>
+                                  {log.description && (
+                                    <p className="text-[10px] text-slate-600 mt-1 line-clamp-1 italic">
+                                      &ldquo;{log.description.split('\n')[0]}&rdquo;
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 sm:self-center">
+                                <span className="text-xs font-bold text-slate-700">
+                                  {log.status === 'Holiday' ? '0h' : `${log.hours}h`}
+                                </span>
+                                <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-xl border ${statusColor}`}>
+                                  {log.status}
+                                </span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Section 2: Pending / Not Submitted Employees */}
+                  <div className="flex flex-col gap-2.5 mt-2">
+                    <div className="flex items-center justify-between border-b border-red-100 pb-2">
+                      <h4 className="text-sm font-extrabold text-red-900 flex items-center gap-1.5">
+                        <UserX className="w-4 h-4 text-red-600" />
+                        <span>कार्य दर्ज नहीं करने वाले कर्मचारी ({pendingLogs.length})</span>
+                      </h4>
+                      <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
+                        pendingLogs.length > 0 ? 'bg-red-50 text-red-700 border-red-200 animate-pulse' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      }`}>
+                        {pendingLogs.length} Pending
+                      </span>
+                    </div>
+
+                    {pendingLogs.length === 0 ? (
+                      <div className="p-4 bg-emerald-50/60 rounded-2xl border border-emerald-200 text-center text-xs font-bold text-emerald-800 flex items-center justify-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600" />
+                        <span>शानदार! सभी कर्मचारियों ने कार्य दर्ज कर दिया है।</span>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {pendingLogs.map((log) => (
+                          <div
+                            key={log.id}
+                            className="p-3 bg-red-50/40 rounded-2xl border border-red-200/80 flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-xl bg-red-100 text-red-700 font-bold text-xs flex items-center justify-center shrink-0">
+                                <UserX className="w-3.5 h-3.5" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-slate-900 text-xs truncate">
+                                    {log.employeeName}
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 font-mono font-bold">
+                                    ({log.employeeId})
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 truncate font-medium">
+                                  {log.employeeRole}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="text-[9px] font-extrabold text-red-700 bg-red-100/80 px-2 py-0.5 rounded-lg border border-red-200 shrink-0">
+                              अपूर्ण (Pending)
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                /* Text Format Tab */
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">
+                      📋 Preview WhatsApp / Plain Text Format:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopySummary}
+                      className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copied ? 'Copied to clipboard!' : 'Copy text'}
+                    </button>
+                  </div>
+                  <pre className="p-4 bg-slate-900 text-emerald-300 rounded-2xl text-xs font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto border border-slate-800 max-h-[50vh]">
+                    {generateTextSummary()}
+                  </pre>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <span className="text-[11px] text-slate-400 font-medium">
+                💡 Tip: Use <strong>PDF / Print</strong> to download A4 report or <strong>WhatsApp</strong> to broadcast to management group.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsShareModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 font-bold text-xs text-slate-700 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
